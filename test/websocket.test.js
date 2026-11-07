@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import test from 'node:test';
+import supertest from 'supertest';
+import WebSocket from 'ws';
+import { setupWebSocket } from '../src/ws.js';
+import { auth, registerUser, reportBody, testContext } from './helpers.js';
+
+test('WebSocket 骨架：Cookie 认证、订阅与退订', async (t) => {
+  const context = testContext();
+  const server = http.createServer(context.app);
+  const wss = setupWebSocket(server, context.db);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => {
+    wss.close();
+    await new Promise((resolve) => server.close(resolve));
+    context.close();
+  });
+  const request = supertest(context.app);
+  const user = await registerUser(request, context, { email: 'ws@example.com' });
+  const created = await request.post('/api/v1/maps').set(auth(user)).send({ name: 'WS图', creatorGameName: 'WS', joinPassword: 'joinpass1!' }).expect(201);
+  const mapId = created.body.map.id;
+  const token = (await request.post(`/api/v1/maps/${mapId}/client-tokens`).set(auth(user)).send({}).expect(201)).body.token;
+  await request.post('/api/v1/client/report').set('Authorization', `Bearer ${token}`).send(reportBody()).expect(202);
+  await request.post(`/api/v1/maps/${mapId}/activate`).set(auth(user)).expect(200);
+  const port = server.address().port;
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, { headers: { Cookie: `lagrange_session=${encodeURIComponent(user.token)}` } });
+  const messages = [];
+  ws.on('message', (data) => messages.push(JSON.parse(data.toString())));
+  await new Promise((resolve, reject) => { ws.once('open', resolve); ws.once('error', reject); });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(messages[0].type, 'ready');
+  ws.send(JSON.stringify({ type: 'subscribe', mapId }));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.ok(messages.some((message) => message.type === 'subscribed' && message.mapId === mapId));
+  ws.send(JSON.stringify({ type: 'unsubscribe', mapId }));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.ok(messages.some((message) => message.type === 'unsubscribed' && message.mapId === mapId));
+  ws.close();
+});
