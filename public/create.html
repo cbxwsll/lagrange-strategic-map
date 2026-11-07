@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>创建地图 · 拉格朗日战略地图</title>
+  <link rel="stylesheet" href="./assets/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="button primary" href="./create.html">创建地图</a>
+    <a class="brand" href="./index.html">拉格朗日战略地图</a>
+    <nav class="session-nav" id="session-nav" aria-label="账号导航"></nav>
+  </header>
+  <main>
+    <h1>创建地图</h1>
+    <ol class="steps" id="wizard-steps">
+      <li data-step="1">1. 准备</li>
+      <li data-step="2">2. 地图信息</li>
+      <li data-step="3">3. 部署客户端</li>
+      <li data-step="4">4. 完成</li>
+    </ol>
+    <div id="message" class="message" role="status" hidden></div>
+
+    <section data-panel="1">
+      <h2>step1 准备</h2>
+      <p>开始之前，请准备：</p>
+      <ol id="prep-requirements"><li>正在读取准备说明……</li></ol>
+      <details>
+        <summary><u>为什么</u></summary>
+        <p id="prep-why"></p>
+      </details>
+    </section>
+
+    <section data-panel="2" hidden>
+      <h2>step2 地图信息</h2>
+      <form id="map-info-form">
+        <label for="map-name">地图名称</label>
+        <input id="map-name" name="name" required maxlength="80" autocomplete="off">
+        <label for="creator-game-name">创建者游戏名</label>
+        <input id="creator-game-name" name="creatorGameName" required maxlength="80" autocomplete="off">
+        <label class="checkbox" for="review-required">
+          <input id="review-required" name="reviewRequired" type="checkbox">
+          按游戏名加入需要审核（申请人须提交证据）
+        </label>
+        <label for="new-join-password">设置加入密码</label>
+        <input id="new-join-password" name="joinPassword" type="password" required minlength="8" maxlength="72" autocomplete="new-password">
+        <p class="muted small">至少 8 个字符，字母、数字、特殊符号任意两类，不含空白。</p>
+        <p class="muted">星系信息、联合体信息不用手填，由本地客户端自动获取上报。</p>
+      </form>
+    </section>
+
+    <section data-panel="3" hidden>
+      <h2>step3 部署客户端</h2>
+      <p><a id="client-download" class="button disabled-button" aria-disabled="true">客户端下载（链接待提供）</a></p>
+      <ol>
+        <li>运行客户端。</li>
+        <li>用网站账号登录。</li>
+        <li>绑定本地图，完成游戏登录与势力选择。</li>
+      </ol>
+      <fieldset>
+        <legend>本地图客户端令牌</legend>
+        <p class="muted small">令牌只显示这一次，请立即复制。刷新后不能再次查看本令牌。</p>
+        <input id="client-token" class="code-value" readonly aria-label="客户端令牌">
+        <div class="toolbar">
+          <button type="button" id="copy-token">复制令牌</button>
+          <button type="button" id="new-token">生成新令牌</button>
+        </div>
+      </fieldset>
+      <p id="client-online" class="status-line">客户端状态：正在检查……</p>
+      <p id="client-last-seen" class="status-line">最近同步：暂无</p>
+      <p id="first-data">首批数据：尚未到达</p>
+    </section>
+
+    <section data-panel="4" hidden>
+      <h2>step4 完成</h2>
+      <p>首批数据已到达，地图已激活。</p>
+      <p>地图 ID：<span id="finished-map-id" class="code-value"></span></p>
+      <p>加入密码：<span id="finished-join-password" class="code-value"></span></p>
+      <p class="muted small">请把地图 ID 和加入密码分享给需要加入的盟友。加入密码仅在当前浏览器标签页暂存。</p>
+      <p><a id="enter-map" class="button primary" href="./index.html">进入地图</a></p>
+    </section>
+
+    <div class="wizard-actions" id="wizard-actions">
+      <button type="button" id="wizard-back">返回上一步</button>
+      <button type="button" class="primary" id="wizard-next">继续</button>
+    </div>
+  </main>
+  <script type="module" src="./assets/create.js"></script>
+</body>
+</html>

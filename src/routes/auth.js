@@ -113,6 +113,10 @@ export function createAuthRouter(config, mailer) {
     res.status(204).end();
   });
 
+  router.get('/session', (req, res) => {
+    res.json({ user: req.user ? publicUser(req.user) : null });
+  });
+
   router.get('/me', authenticated, (req, res) => {
     res.json({ user: publicUser(req.user) });
   });
@@ -125,6 +129,11 @@ export function createAuthRouter(config, mailer) {
       .run(req.user.id, input.question, answerHash, now());
     res.status(204).end();
   }));
+
+  router.get('/recovery/question/mine', authenticated, (req, res) => {
+    const row = req.app.locals.db.prepare('SELECT question FROM recovery_questions WHERE user_id = ?').get(req.user.id);
+    res.json({ question: row?.question || null });
+  });
 
   router.get('/recovery/question', (req, res) => {
     const input = z.object({ email }).parse(req.query);

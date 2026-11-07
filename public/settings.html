@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>账号设置 · 拉格朗日战略地图</title>
+  <link rel="stylesheet" href="./assets/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="button primary" href="./create.html">创建地图</a>
+    <a class="brand" href="./index.html">拉格朗日战略地图</a>
+    <nav class="session-nav" id="session-nav" aria-label="账号导航"></nav>
+  </header>
+  <main>
+    <h1>账号设置</h1>
+    <div id="message" class="message" role="status" hidden></div>
+    <p>当前账号：<span id="account-name"></span></p>
+    <p>邮箱：<span id="account-email"></span></p>
+    <section>
+      <h2>自定义找回问题和答案</h2>
+      <p class="muted">可设置选择题、应用题或文字回答。答案只以 bcrypt 哈希保存。</p>
+      <form id="recovery-settings-form">
+        <label for="settings-question">找回问题</label>
+        <textarea id="settings-question" name="question" required maxlength="200"></textarea>
+        <label for="settings-answer">答案</label>
+        <input id="settings-answer" name="answer" type="password" autocomplete="off" required maxlength="100">
+        <p class="muted small">保存时会同时替换原问题和原答案。</p>
+        <div class="form-actions"><button type="submit" class="primary">保存找回问题</button></div>
+      </form>
+    </section>
+  </main>
+  <script type="module" src="./assets/settings.js"></script>
+</body>
+</html>

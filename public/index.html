@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>拉格朗日战略地图</title>
+  <link rel="stylesheet" href="./assets/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="button primary" href="./create.html">创建地图</a>
+    <a class="brand" href="./index.html">拉格朗日战略地图</a>
+    <nav class="session-nav" id="session-nav" aria-label="账号导航"></nav>
+  </header>
+  <main>
+    <h1>地图列表</h1>
+    <div id="message" class="message" role="status" hidden></div>
+    <p id="list-status" class="muted">正在读取地图……</p>
+    <ul id="map-list" class="clean-list"></ul>
+
+    <section id="join-section" class="manager-section" hidden>
+      <h2 id="join-title">加入地图</h2>
+      <p>需要向对方的（T 权限持有者）和盟主发送申请，任意一方同意即可加入。</p>
+      <form id="join-form">
+        <label for="join-game-name">自己的游戏名</label>
+        <input id="join-game-name" name="gameName" autocomplete="off" required maxlength="80">
+        <button type="button" id="find-identities">查询同名游戏 ID</button>
+        <div id="identity-candidates" class="stack" aria-live="polite"></div>
+        <label for="join-game-id">游戏内 ID（重名时必须确认）</label>
+        <input id="join-game-id" name="gameId" autocomplete="off" required maxlength="80">
+        <label for="join-password">加入密码</label>
+        <input id="join-password" name="joinPassword" type="password" autocomplete="off" required maxlength="72">
+        <div id="evidence-wrap" hidden>
+          <label for="join-evidence">审核证据</label>
+          <textarea id="join-evidence" name="evidence" maxlength="2000"></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" id="join-cancel">取消</button>
+          <button type="submit" class="primary">发送加入申请</button>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <div id="first-notice" class="notice-overlay" role="dialog" aria-modal="true" aria-labelledby="notice-title" hidden>
+    <div class="notice-box">
+      <h2 id="notice-title">使用须知</h2>
+      <p>本网站纯免费公益为爱发电，服务器负载比较高可能会有延迟，担心安全性担心电脑被黑不如别用。</p>
+      <button type="button" class="primary" id="notice-accept">我知道了</button>
+    </div>
+  </div>
+  <script type="module" src="./assets/home.js"></script>
+</body>
+</html>

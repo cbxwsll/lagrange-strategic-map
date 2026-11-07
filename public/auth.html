@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>登录 / 注册 · 拉格朗日战略地图</title>
+  <link rel="stylesheet" href="./assets/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="button primary" href="./create.html">创建地图</a>
+    <a class="brand" href="./index.html">拉格朗日战略地图</a>
+    <nav class="session-nav" id="session-nav" aria-label="账号导航"></nav>
+  </header>
+  <main>
+    <h1>登录 / 注册</h1>
+    <div class="mode-tabs" role="group" aria-label="账号操作">
+      <button type="button" data-mode="login">登录</button>
+      <button type="button" data-mode="register">注册</button>
+      <button type="button" data-mode="recovery">找回密码</button>
+    </div>
+    <div id="message" class="message" role="status" hidden></div>
+
+    <section id="login-section">
+      <h2>邮箱登录</h2>
+      <form id="login-form">
+        <label for="login-email">邮箱</label>
+        <input id="login-email" name="email" type="email" autocomplete="email" required>
+        <label for="login-password">密码（验证码登录时可留空）</label>
+        <input id="login-password" name="password" type="password" autocomplete="current-password">
+        <label for="login-code">邮箱验证码（验证码登录时填写）</label>
+        <input id="login-code" name="code" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code">
+        <button type="button" data-send-code="login">获取登录验证码</button>
+        <div class="two-actions">
+          <button type="submit" class="primary" data-login-method="password">密码登录</button>
+          <button type="submit" class="outline" data-login-method="email">验证码登录</button>
+        </div>
+      </form>
+    </section>
+
+    <section id="register-section" hidden>
+      <h2>邮箱验证码注册</h2>
+      <form id="register-form">
+        <label for="register-email">邮箱</label>
+        <input id="register-email" name="email" type="email" autocomplete="email" required>
+        <button type="button" data-send-code="register">获取注册验证码</button>
+        <label for="register-code">验证码</label>
+        <input id="register-code" name="code" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" required>
+        <label for="register-username">用户名</label>
+        <input id="register-username" name="username" autocomplete="nickname" required maxlength="40">
+        <label for="register-password">密码</label>
+        <input id="register-password" name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="72">
+        <p class="muted small">至少 8 个字符，字母、数字、特殊符号任意两类，不含空白。</p>
+        <div class="two-actions">
+          <button type="submit" class="primary" data-intent="create">我要创建地图</button>
+          <button type="submit" class="outline" data-intent="join">加入地图账号</button>
+        </div>
+      </form>
+    </section>
+
+    <section id="recovery-section" hidden>
+      <h2>自定义问题找回</h2>
+      <form id="recovery-form">
+        <label for="recovery-email">邮箱</label>
+        <input id="recovery-email" name="email" type="email" autocomplete="email" required>
+        <button type="button" id="load-recovery-question">读取找回问题</button>
+        <p id="recovery-question" class="message" hidden></p>
+        <label for="recovery-answer">答案</label>
+        <input id="recovery-answer" name="answer" autocomplete="off" required>
+        <label for="recovery-new-password">新密码</label>
+        <input id="recovery-new-password" name="newPassword" type="password" autocomplete="new-password" required minlength="8" maxlength="72">
+        <div class="form-actions"><button type="submit" class="primary">重置密码</button></div>
+      </form>
+    </section>
+  </main>
+  <script type="module" src="./assets/auth.js"></script>
+</body>
+</html>

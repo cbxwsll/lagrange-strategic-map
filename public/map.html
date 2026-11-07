@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>地图 · 拉格朗日战略地图</title>
+  <link rel="stylesheet" href="./assets/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="button primary" href="./create.html">创建地图</a>
+    <a class="brand" href="./index.html">拉格朗日战略地图</a>
+    <nav class="session-nav" id="session-nav" aria-label="账号导航"></nav>
+  </header>
+  <main class="wide">
+    <h1 id="map-title">地图</h1>
+    <p id="map-subtitle" class="muted"></p>
+    <p id="ws-status" class="status-line">WebSocket：正在连接……</p>
+    <div id="message" class="message" role="status" hidden></div>
+
+    <section>
+      <h2>共享度</h2>
+      <p id="sharing-text" class="muted">暂无共享度数据</p>
+    </section>
+
+    <form id="search-form" class="toolbar">
+      <input id="body-search" type="search" placeholder="按建筑名搜索" aria-label="按建筑名搜索" maxlength="160">
+      <select id="feature-key" aria-label="按特征筛选"><option value="">全部特征</option></select>
+      <select id="feature-value" aria-label="特征值" disabled><option value="">全部特征值</option></select>
+      <button type="submit" class="primary">搜索 / 筛选</button>
+      <button type="button" id="search-reset">重置</button>
+    </form>
+
+    <div class="map-layout">
+      <div>
+        <div class="map-canvas-wrap">
+          <canvas id="map-canvas" aria-label="星图：建筑与舰队位置"></canvas>
+        </div>
+        <div class="legend" aria-label="舰队三态图例">
+          <span><i class="legend-symbol"></i>真实（实心）</span>
+          <span><i class="legend-symbol estimated"></i>推算中（半透明）</span>
+          <span><i class="legend-symbol invalid"></i>判错（标注）</span>
+        </div>
+        <div id="map-empty" class="empty-state">暂无地图数据。等待本地客户端上报；页面已连接 WebSocket 通道。</div>
+      </div>
+      <aside>
+        <h2>建筑结果</h2>
+        <p id="observed-at" class="muted small"></p>
+        <div id="body-results" class="search-results"><p class="muted">暂无结果</p></div>
+      </aside>
+    </div>
+
+    <div class="toolbar">
+      <button type="button" id="refresh-display">刷新数据</button>
+      <button type="button" id="archives-toggle">档案馆</button>
+    </div>
+
+    <section id="creator-panel" class="manager-section" hidden>
+      <h2>创建者管理</h2>
+      <p id="creator-client-status" class="status-line"></p>
+      <p id="creator-last-seen" class="status-line"></p>
+      <div class="toolbar">
+        <button type="button" id="merge-toggle">地图合并</button>
+        <button type="button" id="restore-toggle">恢复地图</button>
+        <button type="button" id="resume-access" hidden>数据号已回盟，恢复访问</button>
+      </div>
+
+      <section id="merge-section" hidden>
+        <h3>地图合并</h3>
+        <form id="merge-form">
+          <label for="merge-target">选择目标地图</label>
+          <select id="merge-target" required></select>
+          <p class="muted small">申请由目标地图创建者批准；批准后源地图版本归档、客户端令牌撤销。</p>
+          <button type="submit" class="primary">发送合并申请</button>
+        </form>
+        <h3>合并申请</h3>
+        <ul id="merge-requests" class="clean-list"></ul>
+      </section>
+
+      <section id="restore-section" hidden>
+        <h3>恢复地图</h3>
+        <p>仅在新星系数据已由客户端上报后使用。恢复时会按 roster 校验成员。</p>
+        <div class="toolbar">
+          <button type="button" data-restore-mode="same_organization">仍是同一联合体</button>
+          <button type="button" data-restore-mode="different_organization">不是同一联合体</button>
+        </div>
+      </section>
+    </section>
+
+    <section id="archives-section" class="manager-section" hidden>
+      <h2>档案馆</h2>
+      <p class="muted">历史开拓地图（纪念展示）。</p>
+      <ul id="archive-list" class="clean-list"></ul>
+    </section>
+  </main>
+  <script type="module" src="./assets/map.js"></script>
+</body>
+</html>

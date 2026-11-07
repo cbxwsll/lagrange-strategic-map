@@ -2,7 +2,7 @@
 
 无尽的拉格朗日玩家游戏外实时战略地图。服务器负责网站账号、游戏身份、地图与权限、数据存储和 WebSocket 推送；本地客户端负责游戏数据采集与轨迹运算。
 
-本仓库当前实现设计文档 v1.0 的第一波服务器端范围（§3–§6、§10–§11），采用 Node.js 20+、Express、SQLite（better-sqlite3）和 `ws`，许可证为 GPL-3.0-only。
+本仓库已实现设计文档 v1.0 的第一波服务器端范围（§3–§6、§10–§11）和第二波网页 UI（§4.1、§6.1、§6.2、§9），采用 Node.js 20+、Express、SQLite（better-sqlite3）、`ws` 与无构建步骤的原生 HTML/JS/CSS，许可证为 GPL-3.0-only。
 
 ## 已实现
 
@@ -16,13 +16,15 @@
 - 地图恢复、roster 移出与跨图自动加入、数据号离盟下线和创建者手动恢复。
 - 地图合并申请与目标创建者审批、历史版本档案馆。
 - WebSocket Cookie 认证、地图订阅/退订和心跳骨架；业务推送事件尚未启用。
-- §11 权限状态机 8 项单测，以及密码边界和端到端集成测试。
+- 原生静态页面：地图列表与加入、邮箱注册/登录/找回、四步创建向导、账号设置。
+- 地图页：建筑名搜索、特征筛选、共享度提示、舰队三态、创建者管理入口、档案馆和 WS 状态。
+- 最新快照只读接口 `GET /maps/:id/display`，从 SQLite 读取真实建筑、舰队和共享度数据。
+- §11 权限状态机 8 项单测，以及密码边界、端到端集成、静态页面和运行时地址测试。
 
 ## 明确不在本波范围
 
 - 本地客户端抓包、扫码登录、协议模拟和轨迹运算（设计文档 §12 真机验证项）。
-- 网页 UI。
-- WebSocket 具体业务消息与三态地图展示。
+- WebSocket 具体业务推送消息；地图页已接 WS 骨架和只读快照，等待后续业务事件。
 
 ## 目录
 
@@ -35,9 +37,10 @@ src/
     index.js               SQLite 连接和迁移执行器
     migrations/001_initial.sql
   lib/                     认证、权限、地图、roster、安全等领域逻辑
-  routes/                  auth / maps / join / permissions / client
+  routes/                  auth / maps / display / join / permissions / client
   ws.js                    WebSocket 骨架
- test/                    权限单测、集成测试、WebSocket 测试
+public/                   原生 HTML/JS/CSS 页面，无构建步骤
+test/                     权限单测、集成测试、WebSocket 与 UI 测试
 ```
 
 ## 本地运行
@@ -77,8 +80,10 @@ curl http://127.0.0.1:9200/healthz
 | `POST /auth/login` | 邮箱+密码登录 |
 | `POST /auth/login/email` | 邮箱+验证码登录 |
 | `POST /auth/logout`、`GET /auth/me` | 退出、当前账号 |
+| `GET /auth/session` | 页面初始化读取会话；游客返回 `user=null` |
 | `PUT /auth/recovery/question` | 设置自定义找回问题 |
-| `GET /auth/recovery/question?email=` | 读取找回问题 |
+| `GET /auth/recovery/question/mine` | 当前账号读取自己的找回问题，未设置返回 `question=null` |
+| `GET /auth/recovery/question?email=` | 找回流程按邮箱读取找回问题 |
 | `POST /auth/recovery/reset` | 验证答案、重置密码并注销全部会话 |
 
 密码规则：至少 8 个字符、bcrypt 输入不超过 72 字节、无空白，字母/数字/特殊符号任意两类。Unicode 字母（含中文）按字母类处理。
@@ -94,6 +99,7 @@ curl http://127.0.0.1:9200/healthz
 | `POST /maps/:id/client-tokens` | step3 签发客户端令牌，仅显示一次 |
 | `DELETE /maps/:id/client-tokens/:tokenId` | 撤销客户端令牌 |
 | `POST /maps/:id/activate` | step4 首批数据到达后激活 |
+| `GET /maps/:id/display` | 最新快照；支持 search、featureKey、featureValue 查询 |
 | `POST /maps/:id/join-requests` | 游戏名+游戏内 ID+加入密码申请；按配置要求证据 |
 | `GET /maps/:id/game-identities?gameName=` | 重名游戏 ID 候选 |
 | `GET /maps/:id/join-requests/inbox` | 当前 T 权限持有者/盟主审批箱 |
@@ -171,6 +177,6 @@ curl http://127.0.0.1:9200/healthz
 npm test
 ```
 
-覆盖：§11 权限 8/8、密码边界 8/8、注册登录找回、建图上报激活、批次幂等、双签审批、换星系归档恢复、WebSocket 认证订阅。测试数据库位于系统临时目录，每项测试后删除。
+覆盖：§11 权限 8/8、密码边界 8/8、注册登录找回、建图上报激活、批次幂等、双签审批、换星系归档恢复、WebSocket 认证订阅、静态页面、运行时地址、真实快照筛选和页面初始化会话。测试数据库位于系统临时目录，每项测试后删除。
 
 部署见 [DEPLOYMENT.md](DEPLOYMENT.md)。
