@@ -46,8 +46,12 @@ export async function api(path, options = {}) {
   return data;
 }
 
+export async function currentSession() {
+  return api('/auth/session');
+}
+
 export async function currentUser() {
-  return (await api('/auth/session')).user;
+  return (await currentSession()).user;
 }
 
 export function renderSession(user) {
@@ -87,7 +91,7 @@ export function showError(error, target) {
 }
 
 export function formatTime(value) {
-  if (!value) return '暂无';
+  if (!value) return '暂无时间';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '时间格式未知';
   return new Intl.DateTimeFormat('zh-CN', {
@@ -115,7 +119,7 @@ export function showFirstNotice() {
   overlay.hidden = false;
   accept.focus();
   accept.addEventListener('click', () => {
-    try { window.localStorage.setItem(key, 'seen'); } catch { /* 无存储权限时仅本次关闭 */ }
+    try { window.localStorage.setItem(key, 'seen'); } catch { /* 存储不可用时仅本次关闭 */ }
     overlay.hidden = true;
   });
 }
@@ -167,9 +171,8 @@ export function connectMapSocket(mapId, onStatus, onBusinessMessage = () => {}) 
 }
 
 export async function copyText(text) {
-  if (!text) throw new Error('没有可复制的令牌');
-  if (!navigator.clipboard?.writeText) throw new Error('请选中令牌文本后手动复制');
-  await navigator.clipboard.writeText(text);
+  if (!navigator.clipboard?.writeText) throw new Error('没有可复制的令牌');
+  try { await navigator.clipboard.writeText(text); } catch { throw new Error('请选中令牌文本后手动复制'); }
 }
 
 export function requiredMapId() {

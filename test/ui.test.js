@@ -24,7 +24,9 @@ test('§9 页面初始化静默读取会话和本人找回问题', async (t) => 
   const context = testContext();
   t.after(() => context.close());
   const request = supertest(context.app);
-  assert.deepEqual((await request.get('/api/v1/auth/session').expect(200)).body, { user: null });
+  const guest = await request.get('/api/v1/auth/session').expect(200);
+  assert.equal(guest.body.user, null);
+  assert.equal(guest.body.inviteRequired, false);
   await request.get('/api/v1/auth/recovery/question/mine').expect(401);
   const user = await registerUser(request, context, { email: 'settings@example.com' });
   const session = await request.get('/api/v1/auth/session').set(auth(user)).expect(200);

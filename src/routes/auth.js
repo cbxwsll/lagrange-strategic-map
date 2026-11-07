@@ -14,7 +14,7 @@ const password = z.string().min(1).max(72);
 
 function sessionResponse(db, config, user) {
   const session = issueSession(db, config, user.id);
-  return { user: publicUser(user), token: session.token, expiresAt: session.expires };
+  return { user: publicUser(user), token: session.token, expiresAt: session.expires, betaWelcome: config.betaInviteRequired === true };
 }
 
 function latestChallenge(db, emailAddress, codePurpose) {
@@ -33,6 +33,23 @@ function consumeCode(db, config, emailAddress, codePurpose, code) {
     fail(400, 'CODE_INVALID', '验证码无效、已过期或尝试次数已用完');
   }
   db.prepare('UPDATE email_challenges SET consumed_at = ? WHERE id = ?').run(now(), challenge.id);
+}
+
+function assertInviteAvailable(database, inviteCode) {
+  if (!inviteCode) fail(400, 'INVITE_REQUIRED', '内测模式下必须填写有效邀请码');
+  const invite = database.prepare('SELECT max_uses, used_count FROM invites WHERE code = ?').get(inviteCode);
+  if (!invite) fail(400, 'INVITE_INVALID', '邀请码无效，请检查后重试');
+  if (invite.max_uses > 0 && invite.used_count >= invite.max_uses) {
+    fail(400, 'INVITE_EXHAUSTED', '邀请码使用次数已用完');
+  }
+}
+
+function consumeInvite(database, inviteCode, userId, timestamp) {
+  const result = database.prepare(`UPDATE invites SET used_count = used_count + 1
+    WHERE code = ? AND (max_uses = 0 OR used_count < max_uses)`).run(inviteCode);
+  if (!result.changes) assertInviteAvailable(database, inviteCode);
+  database.prepare('INSERT INTO invite_uses (invite_code, user_id, used_at) VALUES (?, ?, ?)')
+    .run(inviteCode, userId, timestamp);
 }
 
 export function createAuthRouter(config, mailer) {
@@ -71,15 +88,23 @@ export function createAuthRouter(config, mailer) {
   }));
 
   router.post('/register', asyncRoute(async (req, res) => {
-    const input = z.object({ email, code: z.string().regex(/^\d{6}$/), username, password, intent: z.enum(['create', 'join']).default('create') }).parse(req.body);
+    const input = z.object({
+      email, code: z.string().regex(/^\d{6}$/), username, password,
+      intent: z.enum(['create', 'join']).default('create'),
+      inviteCode: z.string().trim().max(200).optional().default('')
+    }).parse(req.body);
     assertPasswordComplexity(input.password);
     const database = req.app.locals.db;
+    if (config.betaInviteRequired) assertInviteAvailable(database, input.inviteCode);
     consumeCode(database, config, input.email, 'register', input.code);
-    if (database.prepare('SELECT id FROM users WHERE email = ?').get(input.email)) fail(409, 'EMAIL_REGISTERED', '该邮箱已注册');
     const passwordHash = await hashPassword(input.password, config.bcryptRounds);
     const user = { id: uuid(), email: input.email, username: input.username, created_at: now() };
-    database.prepare('INSERT INTO users (id, email, username, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(user.id, user.email, user.username, passwordHash, user.created_at, user.created_at);
+    database.transaction(() => {
+      if (database.prepare('SELECT id FROM users WHERE email = ?').get(input.email)) fail(409, 'EMAIL_REGISTERED', '该邮箱已注册');
+      database.prepare('INSERT INTO users (id, email, username, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(user.id, user.email, user.username, passwordHash, user.created_at, user.created_at);
+      if (config.betaInviteRequired) consumeInvite(database, input.inviteCode, user.id, user.created_at);
+    })();
     const response = sessionResponse(database, config, user);
     setSessionCookie(res, config, response.token, response.expiresAt);
     res.status(201).json({ ...response, nextRoute: input.intent === 'create' ? '/maps/new' : '/maps' });
@@ -114,7 +139,10 @@ export function createAuthRouter(config, mailer) {
   });
 
   router.get('/session', (req, res) => {
-    res.json({ user: req.user ? publicUser(req.user) : null });
+    res.json({
+      user: req.user ? publicUser(req.user) : null,
+      inviteRequired: config.betaInviteRequired === true
+    });
   });
 
   router.get('/me', authenticated, (req, res) => {

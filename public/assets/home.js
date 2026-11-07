@@ -1,7 +1,13 @@
 import {
-  MAP_STATUS, api, currentUser, element, renderSession, showError,
+  MAP_STATUS, api, currentSession, element, renderSession, showError,
   showFirstNotice, showMessage, setBusy
 } from './common.js';
+
+const BETA_WELCOME_PENDING = 'lagrange.beta-welcome.pending';
+const BETA_WELCOME = {
+  title: (username) => `欢迎体验内测版本，${username}。`,
+  copy: '本网站处于内测阶段：功能可能不稳定，内测期间的账号和地图数据不保证保留到正式版；遇到问题请联系站长反馈。本地客户端挂机采集数据存在游戏账号封禁风险，请自行评估后使用。'
+};
 
 let user = null;
 let selectedMap = null;
@@ -13,6 +19,29 @@ const joinForm = document.querySelector('#join-form');
 const evidenceWrap = document.querySelector('#evidence-wrap');
 const evidenceInput = document.querySelector('#join-evidence');
 const candidates = document.querySelector('#identity-candidates');
+
+function showBetaWelcome(inviteRequired) {
+  if (!inviteRequired || !user) return;
+  let username;
+  try { username = window.sessionStorage.getItem(BETA_WELCOME_PENDING); } catch { return; }
+  if (!username) return;
+  const show = () => {
+    try { window.sessionStorage.removeItem(BETA_WELCOME_PENDING); } catch { /* 无存储权限时仅本次展示 */ }
+    document.querySelector('#beta-welcome-title').textContent = BETA_WELCOME.title(username);
+    document.querySelector('#beta-welcome-copy').textContent = BETA_WELCOME.copy;
+    document.querySelector('#beta-welcome').hidden = false;
+    document.querySelector('#beta-welcome-accept').focus();
+  };
+  if (document.querySelector('#first-notice').hidden) show();
+  else document.querySelector('#notice-accept').addEventListener('click', show, { once: true });
+}
+
+document.querySelector('#beta-welcome-accept').addEventListener('click', () => {
+  document.querySelector('#beta-welcome').hidden = true;
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') document.querySelector('#beta-welcome').hidden = true;
+});
 
 function openJoin(map) {
   selectedMap = map;
@@ -82,7 +111,7 @@ document.querySelector('#find-identities').addEventListener('click', async (even
   try {
     const data = await api(`/maps/${encodeURIComponent(selectedMap.id)}/game-identities?gameName=${encodeURIComponent(gameName)}`);
     if (!data.candidates.length) {
-      candidates.append(element('p', { className: 'muted', text: '没有已上报的同名候选，请手动填写游戏内 ID。' }));
+      candidates.append(element('p', { className: 'muted small', text: '没有已上报的同名候选，请手动填写游戏内 ID。' }));
     }
     for (const identity of data.candidates) {
       candidates.append(element('button', {
@@ -128,8 +157,10 @@ document.querySelector('#join-cancel').addEventListener('click', () => {
 async function initialize() {
   showFirstNotice();
   try {
-    user = await currentUser();
+    const session = await currentSession();
+    user = session.user;
     renderSession(user);
+    showBetaWelcome(session.inviteRequired);
   } catch (error) {
     showError(error);
   }

@@ -10,6 +10,13 @@ function integer(value, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } = {
   return selected;
 }
 
+function boolean(value, fallback = false) {
+  if (value === undefined || value === '') return fallback;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  throw new Error(`Invalid boolean configuration: ${value}`);
+}
+
 export function loadConfig(env = process.env) {
   const nodeEnv = env.NODE_ENV || 'development';
   const codeHmacSecret = env.CODE_HMAC_SECRET || '';
@@ -40,6 +47,7 @@ export function loadConfig(env = process.env) {
     sessionTtlDays: integer(env.SESSION_TTL_DAYS, 30, { max: 365 }),
     bcryptRounds: integer(env.BCRYPT_ROUNDS, 12, { min: 10, max: 14 }),
     cookieSecure: env.COOKIE_SECURE !== 'false',
+    betaInviteRequired: boolean(env.BETA_INVITE_REQUIRED, false),
     smtp,
     emailCodeTtlMinutes: integer(env.EMAIL_CODE_TTL_MINUTES, 10, { max: 60 }),
     emailCodeMaxAttempts: integer(env.EMAIL_CODE_MAX_ATTEMPTS, 5, { max: 20 }),
