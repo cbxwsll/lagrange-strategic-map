@@ -1,11 +1,16 @@
 import { fail } from './errors.js';
 import { hashToken, now, randomToken, uuid } from './security.js';
 
-function cookies(req) {
-  return Object.fromEntries((req.headers.cookie || '').split(';').map((part) => part.trim()).filter(Boolean).map((part) => {
+export function cookies(req) {
+  const result = {};
+  for (const part of (req.headers.cookie || '').split(';')) {
     const index = part.indexOf('=');
-    return [decodeURIComponent(part.slice(0, index)), decodeURIComponent(part.slice(index + 1))];
-  }));
+    if (index <= 0) continue;
+    try {
+      result[decodeURIComponent(part.slice(0, index).trim())] = decodeURIComponent(part.slice(index + 1).trim());
+    } catch { /* 畸形 Cookie 按未提供处理 */ }
+  }
+  return result;
 }
 
 function requestToken(req) {

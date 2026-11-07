@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import helmet from 'helmet';
 import { optionalAuth } from './lib/auth.js';
+import { betaGate, createBetaRouter } from './lib/beta.js';
 import { errorMiddleware } from './lib/errors.js';
 import { createMailer } from './lib/mailer.js';
 import { createAuthRouter } from './routes/auth.js';
@@ -31,11 +32,13 @@ export function buildApp({ config, db, mailer }) {
     next();
   });
   app.use(optionalAuth);
+  app.use(betaGate(config));
 
   app.get('/healthz', (req, res) => {
     req.app.locals.db.prepare('SELECT 1').get();
     res.json({ ok: true, service: 'lagrange-strategic-map', protocolVersion: 1 });
   });
+  app.use('/api/v1/beta/enter', createBetaRouter(config));
   app.use('/api/v1/auth', createAuthRouter(config, mailer || createMailer(config)));
   app.use('/api/v1/client', createClientRouter());
   app.use('/api/v1/maps', createMapsRouter(config));

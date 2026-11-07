@@ -1,14 +1,5 @@
 import { api, currentSession, renderSession, runtime, setBusy, showError, showMessage } from './common.js';
 
-const BETA_WELCOME_PENDING = 'lagrange.beta-welcome.pending';
-
-function queueBetaWelcome(response) {
-  try {
-    window.sessionStorage.removeItem(BETA_WELCOME_PENDING);
-    if (response.betaWelcome) window.sessionStorage.setItem(BETA_WELCOME_PENDING, response.user.username);
-  } catch { /* 存储不可用时仍允许正常登录 */ }
-}
-
 const sections = {
   login: document.querySelector('#login-section'),
   register: document.querySelector('#register-section'),
@@ -81,8 +72,7 @@ document.querySelector('#login-form').addEventListener('submit', async (event) =
   setBusy(submit, true, '正在登录……');
   try {
     const path = method === 'email' ? '/auth/login/email' : '/auth/login';
-    const response = await api(path, { method: 'POST', body: method === 'email' ? { email, code } : { email, password } });
-    queueBetaWelcome(response);
+    await api(path, { method: 'POST', body: method === 'email' ? { email, code } : { email, password } });
     window.location.href = runtime.page('index.html');
   } catch (error) {
     showError(error);
@@ -96,18 +86,16 @@ document.querySelector('#register-form').addEventListener('submit', async (event
   const intent = submit.dataset.intent;
   setBusy(submit, true, '正在注册……');
   try {
-    const response = await api('/auth/register', {
+    await api('/auth/register', {
       method: 'POST',
       body: {
         email: document.querySelector('#register-email').value.trim(),
         code: document.querySelector('#register-code').value.trim(),
         username: document.querySelector('#register-username').value.trim(),
         password: document.querySelector('#register-password').value,
-        inviteCode: document.querySelector('#register-invite-code').value.trim(),
         intent
       }
     });
-    queueBetaWelcome(response);
     window.location.href = runtime.page(intent === 'create' ? 'create.html' : 'index.html');
   } catch (error) {
     showError(error);
@@ -159,8 +147,6 @@ async function initialize() {
   try {
     const session = await currentSession();
     renderSession(session.user);
-    document.querySelector('#invite-field').hidden = !session.inviteRequired;
-    document.querySelector('#register-invite-code').required = session.inviteRequired;
   } catch { renderSession(null); }
   const parameters = new URL(window.location.href).searchParams;
   setMode(parameters.get('mode') || 'login');

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>内测通行 · 拉格朗日战略地图</title>
+  <link rel="stylesheet" href="./assets/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <span></span>
+    <a class="brand" href="./beta.html">拉格朗日战略地图</a>
+    <span class="small">BETA ACCESS</span>
+  </header>
+  <main>
+    <h1>内测通行</h1>
+    <p>本站当前仅向内测访客开放。请输入站长发放的通行码，验证后将返回原目标页面。</p>
+    <div id="message" class="message" role="status" hidden></div>
+    <form id="beta-form">
+      <label for="beta-code">内测通行码</label>
+      <input id="beta-code" name="code" autocomplete="off" required maxlength="200" autofocus>
+      <div class="form-actions">
+        <button type="submit" class="primary" id="beta-submit">进入战略地图</button>
+      </div>
+    </form>
+    <noscript><p class="message error">需要启用 JavaScript 才能验证内测通行码。</p></noscript>
+  </main>
+  <script type="module" src="./assets/beta.js"></script>
+</body>
+</html>

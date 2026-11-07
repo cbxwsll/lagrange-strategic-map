@@ -76,9 +76,12 @@ function drawMap() {
   const context = canvas.getContext('2d');
   context.setTransform(ratio, 0, 0, ratio, 0, 0);
   context.clearRect(0, 0, width, height);
-  context.fillStyle = '#ffffff';
+  const styles = getComputedStyle(document.documentElement);
+  const paper = styles.getPropertyValue('--paper2').trim();
+  const ink = styles.getPropertyValue('--ink').trim();
+  context.fillStyle = paper;
   context.fillRect(0, 0, width, height);
-  context.strokeStyle = '#e1e1e1';
+  context.strokeStyle = 'rgba(20, 18, 16, .12)';
   context.lineWidth = 1;
   for (let index = 1; index < 10; index += 1) {
     const x = width * index / 10;
@@ -111,18 +114,18 @@ function drawMap() {
   for (const body of bodies) {
     const point = project(body);
     context.globalAlpha = 1;
-    context.fillStyle = '#ffffff';
-    context.strokeStyle = '#231f20';
+    context.fillStyle = paper;
+    context.strokeStyle = ink;
     context.lineWidth = state.focusBodyKey === body.key ? 4 : 1.5;
     context.fillRect(point.x - 6, point.y - 6, 12, 12);
     context.strokeRect(point.x - 6, point.y - 6, 12, 12);
-    context.fillStyle = '#231f20';
+    context.fillStyle = ink;
     context.fillText(body.name, point.x + 10, point.y + 4);
   }
   for (const fleet of fleets) {
     const point = project(fleet);
-    context.strokeStyle = '#231f20';
-    context.fillStyle = '#231f20';
+    context.strokeStyle = ink;
+    context.fillStyle = ink;
     context.lineWidth = 2;
     if (fleet.state === 'real') {
       context.globalAlpha = 1;

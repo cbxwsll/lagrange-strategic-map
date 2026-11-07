@@ -15,7 +15,7 @@ const config = loadConfig();
 const db = openDatabase(config);
 const app = buildApp({ config, db });
 const server = http.createServer(app);
-const wss = setupWebSocket(server, db);
+const wss = setupWebSocket(server, db, config);
 
 server.listen(config.port, config.host, () => {
   console.log(`lagrange-strategic-map listening on ${config.host}:${config.port}`);

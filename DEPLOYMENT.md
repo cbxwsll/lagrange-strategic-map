@@ -31,13 +31,13 @@ mkdir -p data
 
 生产启动会检查密钥长度和 SMTP 必填项，缺失时拒绝启动，不会退化为控制台打印验证码。`.env` 按脚本所在目录读取，不依赖 pm2 启动时的当前目录。
 
-内测邀请开关默认关闭。需要邀请注册时在服务器 `.env` 设置：
+全站内测门槛默认关闭。需要访客输码进站时在服务器 `.env` 设置：
 
 ```dotenv
 BETA_INVITE_REQUIRED=true
 ```
 
-设为 `false` 时两种注册流程均不要求邀请码。开关只接受小写 `true`/`false`；修改后执行 `pm2 restart lagrange-strategic-map --update-env` 生效。
+设为 `false` 时全站免码。开关只接受小写 `true`/`false`；修改后执行 `pm2 restart lagrange-strategic-map --update-env` 生效。
 
 ## 3. pm2 启动
 
@@ -94,18 +94,20 @@ wss://skylin.xin/project/lagrange/ws
 
 9200 只绑定 `127.0.0.1`，无需为它在阿里云安全组或 ufw 开公网入站规则。
 
-## 5. 内测邀请码
+## 5. 全站内测通行码
 
-首次启动或更新后重启会自动执行邀请表迁移。需要种码时，只在服务器项目目录执行：
+首次启动或更新后重启会自动执行门槛表迁移。需要种码时，只在服务器项目目录执行：
 
 ```bash
 cd /projects/lagrange-strategic-map
-npm run invite -- add '在此填入邀请码' --name '绑定名' --uses 1
+npm run invite -- add '在此填入通行码' --name '绑定名'
 ```
 
-`--uses` 必须是非负整数：`1` 表示仅可成功注册一个账号，`0` 表示不限次数。每次成功注册都会增加 `used_count`，并在 `invite_uses` 记录使用账号。真实邀请码只写入服务器 SQLite，不要写入 `.env.example`、文档、Issue、提交信息或 Git 跟踪文件。
+进站接口为 `POST /api/v1/beta/enter`。验证成功后签发 7 天 HttpOnly、SameSite=Lax cookie；生产配置下同时为 Secure。页面无 cookie 时 302 到输码页，API 返回 401 `BETA_REQUIRED`，WebSocket Upgrade 拒绝连接。每次成功进站都会把 `used_count` 加一，仅用于审计，不限制进站次数，也不与注册账号绑定。
 
-开启或关闭邀请注册后，无需改代码或重新种码：
+需要吊销时，在服务器 SQLite 中把对应码改为 `active=0`。已有 cookie 会立即无法通过新的页面、API、WebSocket 连接或消息校验。真实通行码只写入服务器 SQLite，不要写入 `.env.example`、文档、Issue、提交信息或 Git 跟踪文件。
+
+开启或关闭全站门槛后，无需改代码或重新种码：
 
 ```bash
 pm2 restart lagrange-strategic-map --update-env

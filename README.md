@@ -7,7 +7,7 @@
 ## 已实现
 
 - 邮箱验证码注册、密码/验证码登录、自定义问题找回；密码和找回答案使用 bcrypt 哈希。
-- 可运行时切换的内测邀请注册：两种注册流程统一校验、原子计数并记录使用账号；每次登录显示一次内测须知。
+- 可运行时切换的全站内测门槛：页面、API 与 WebSocket 统一校验 7 天签名 cookie；停用码立即失效，注册不再单独要求邀请码。
 - 会话、验证码状态、限流计数、地图、权限、申请和快照全部落 SQLite，不把地图数据驻留内存。
 - 游戏内 ID 作为唯一身份基准，游戏名仅用于显示与重名候选查询。
 - 地图创建向导 step1–step4 所需 API、客户端令牌、首批数据激活。
@@ -38,7 +38,8 @@ src/
     index.js               SQLite 连接和迁移执行器
     migrations/001_initial.sql
     migrations/002_invites.sql
-  invite.js                 内测邀请码命令行管理入口
+    migrations/003_beta_gate.sql
+  invite.js                 内测通行码命令行管理入口
   lib/                     认证、权限、地图、roster、安全等领域逻辑
   routes/                  auth / maps / display / join / permissions / client
   ws.js                    WebSocket 骨架
@@ -68,28 +69,30 @@ curl http://127.0.0.1:9200/healthz
 
 数据库默认位于 `data/lagrange.db`，首次启动自动执行迁移。WAL 模式产生的 `-shm`/`-wal` 文件均被 `.gitignore` 排除。
 
-## 内测邀请
+## 全站内测门槛
 
-`.env` 中 `BETA_INVITE_REQUIRED=true` 时，创建地图和加入地图两条注册流程都必须提交有效邀请码；`false` 或缺省时开放注册。修改环境变量后重启进程即可切换。
+`.env` 中 `BETA_INVITE_REQUIRED=true` 时，没有有效通行 cookie 的访客访问任何页面、API 或 WebSocket 都会被拦截；仅健康检查、进站接口、输码页及其必要静态资源放行。`false` 或缺省时全站免码。修改环境变量后执行 `pm2 restart lagrange-strategic-map --update-env` 即可切换。
 
 管理员在服务器手动种码：
 
 ```bash
-npm run invite -- add '在此填入邀请码' --name '绑定名' --uses 1
+npm run invite -- add '在此填入通行码' --name '绑定名'
 ```
 
-`--uses 0` 表示不限次数，正整数表示可成功注册的账号数。邀请信息存入 `invites`，使用账号记录存入 `invite_uses`；真实邀请码不进入 Git。内测期间每次登录或注册后进入地图列表会显示一次内测须知，刷新不重复显示，下一次登录再次显示。
+`invites` 保存 `code`、`bound_name`、`active`、`used_count` 和 `created_at`。正确通行码会换来由 `CODE_HMAC_SECRET` 签名、有效期 7 天的 HttpOnly cookie，并进入原目标页面；欢迎提示使用邀请码的 `bound_name`，不是注册用户名。每次成功进站仅增加审计计数，不存在次数上限，注册流程也不消耗次数。将对应记录改为 `active=0` 即可吊销，已有 cookie 会立即无法通过新的页面、API、WebSocket 连接或消息校验。真实通行码只写入服务器 SQLite，不进入 Git。
 
 ## API 前缀
 
 所有 REST API 位于 `/api/v1`。经 Caddy 对外暴露时前缀为 `/project/lagrange/api/v1`。
 
-网站认证支持 `Authorization: Bearer <session-token>` 和 HttpOnly Cookie。客户端上报使用独立的 `Authorization: Bearer <client-token>`，两种 token 不混用。WebSocket 只接受会话 Cookie，不把 token 放进 URL 查询参数。
+网站认证支持 `Authorization: Bearer <session-token>` 和 HttpOnly Cookie。客户端上报使用独立的 `Authorization: Bearer <client-token>`，两种 token 不混用。WebSocket 的账号认证只接受会话 Cookie，不把 token 放进 URL 查询参数；内测门槛开启时还必须同时携带有效通行 cookie。
 
 ### 账号
 
 | 方法与路径 | 用途 |
 |---|---|
+| `GET /beta/enter` | 读取全站内测门槛开关状态 |
+| `POST /beta/enter` | 校验通行码并签发 7 天通行 cookie |
 | `POST /auth/email-codes` | 发送 register/login/recovery 验证码 |
 | `POST /auth/register` | 注册；`intent=create` 进入创建向导，`join` 进入地图列表 |
 | `POST /auth/login` | 邮箱+密码登录 |
@@ -192,6 +195,6 @@ npm run invite -- add '在此填入邀请码' --name '绑定名' --uses 1
 npm test
 ```
 
-覆盖：§11 权限 8/8、密码边界 8/8、注册登录找回、内测邀请开关/无效码/单次码/不限次码/种码命令/欢迎分支、建图上报激活、批次幂等、双签审批、换星系归档恢复、WebSocket 认证订阅、静态页面、运行时地址、真实快照筛选和页面初始化会话。测试数据库位于系统临时目录，每项测试后删除。
+覆盖：§11 权限 8/8、密码边界 8/8、注册登录找回、内测门槛开关、页面/API 拦截、错码/对码/停用、cookie 签名与有效期、种码命令、欢迎分支、建图上报激活、批次幂等、双签审批、换星系归档恢复、WebSocket 认证订阅与内测门槛、静态页面、运行时地址、真实快照筛选和页面初始化会话。测试数据库位于系统临时目录，每项测试后删除。
 
 部署见 [DEPLOYMENT.md](DEPLOYMENT.md)。

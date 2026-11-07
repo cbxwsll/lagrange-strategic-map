@@ -38,6 +38,14 @@ export async function api(path, options = {}) {
   if (response.status === 204) return null;
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
+    if (data.error?.code === 'BETA_REQUIRED') {
+      const entry = new URL(data.betaEntry || 'beta.html', runtime.base);
+      const current = new URL(window.location.href);
+      const basePath = runtime.base.pathname;
+      const pagePath = current.pathname.startsWith(basePath) ? current.pathname.slice(basePath.length) : '';
+      entry.searchParams.set('next', `/${pagePath}${current.search}${current.hash}`);
+      window.location.replace(entry.toString());
+    }
     const error = new Error(data.error?.message || `请求失败（HTTP ${response.status}）`);
     error.code = data.error?.code || 'REQUEST_FAILED';
     error.status = response.status;
@@ -111,7 +119,52 @@ export function setBusy(button, busy, busyText = '正在处理……') {
   }
 }
 
+const BETA_WELCOME_PENDING = 'lagrange.beta-welcome.pending';
+const BETA_WELCOME_COPY = '本网站处于内测阶段：功能可能不稳定，内测期间的账号和地图数据不保证保留到正式版；遇到问题请联系站长反馈。本地客户端挂机采集数据存在游戏账号封禁风险，请自行评估后使用。';
+let betaWelcomeOverlay = null;
+const betaWelcomeCallbacks = [];
+
+function closeBetaWelcome() {
+  if (!betaWelcomeOverlay) return;
+  try { window.sessionStorage.removeItem(BETA_WELCOME_PENDING); } catch { /* 无存储权限时仅本次关闭 */ }
+  betaWelcomeOverlay.remove();
+  betaWelcomeOverlay = null;
+  const callbacks = betaWelcomeCallbacks.splice(0);
+  for (const callback of callbacks) callback();
+}
+
+export function showBetaWelcome(onClose) {
+  if (betaWelcomeOverlay) {
+    if (onClose) betaWelcomeCallbacks.push(onClose);
+    return true;
+  }
+  let boundName;
+  try {
+    boundName = window.sessionStorage.getItem(BETA_WELCOME_PENDING);
+  } catch { return false; }
+  if (!boundName) return false;
+  if (onClose) betaWelcomeCallbacks.push(onClose);
+  const accept = element('button', { id: 'beta-welcome-accept', type: 'button', className: 'primary', text: '我知道了', onclick: closeBetaWelcome });
+  betaWelcomeOverlay = element('div', {
+    id: 'beta-welcome', className: 'notice-overlay', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'beta-welcome-title'
+  }, [element('div', { className: 'notice-box' }, [
+    element('h2', { id: 'beta-welcome-title', text: `欢迎体验内测版本，${boundName}。` }),
+    element('p', { text: BETA_WELCOME_COPY }),
+    accept
+  ])]);
+  document.body.append(betaWelcomeOverlay);
+  accept.focus();
+  return true;
+}
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') closeBetaWelcome();
+});
+
+showBetaWelcome();
+
 export function showFirstNotice() {
+  if (showBetaWelcome(showFirstNotice)) return;
   const key = 'lagrange.notice.v1';
   try { if (window.localStorage.getItem(key) === 'seen') return; } catch { /* 存储不可用时仍显示 */ }
   const overlay = document.querySelector('#first-notice');
