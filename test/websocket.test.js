@@ -22,7 +22,7 @@ test('WebSocket 骨架：Cookie 认证、订阅与退订', async (t) => {
   const mapId = created.body.map.id;
   const token = (await request.post(`/api/v1/maps/${mapId}/client-tokens`).set(auth(user)).send({}).expect(201)).body.token;
   await request.post('/api/v1/client/report').set('Authorization', `Bearer ${token}`).send(reportBody()).expect(202);
-  await request.post(`/api/v1/maps/${mapId}/activate`).set(auth(user)).send({}).expect(200);
+  await request.post(`/api/v1/maps/${mapId}/activate`).set(auth(user)).expect(200);
   const port = server.address().port;
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, { headers: { Cookie: `lagrange_session=${encodeURIComponent(user.token)}` } });
   const messages = [];
