@@ -1,2 +1,176 @@
-# lagrange-strategic-map
-无尽的拉格朗日玩家游戏外实时战略地图——本地客户端上报视野数据，网页端合并展示（GPLv3，免费公益）
+# 拉格朗日战略地图服务端
+
+无尽的拉格朗日玩家游戏外实时战略地图。服务器负责网站账号、游戏身份、地图与权限、数据存储和 WebSocket 推送；本地客户端负责游戏数据采集与轨迹运算。
+
+本仓库当前实现设计文档 v1.0 的第一波服务器端范围（§3–§6、§10–§11），采用 Node.js 20+、Express、SQLite（better-sqlite3）和 `ws`，许可证为 GPL-3.0-only。
+
+## 已实现
+
+- 邮箱验证码注册、密码/验证码登录、自定义问题找回；密码和找回答案使用 bcrypt 哈希。
+- 会话、验证码状态、限流计数、地图、权限、申请和快照全部落 SQLite，不把地图数据驻留内存。
+- 游戏内 ID 作为唯一身份基准，游戏名仅用于显示与重名候选查询。
+- 地图创建向导 step1–step4 所需 API、客户端令牌、首批数据激活。
+- 创建者、T 权限、盟主、小队队长、管理员子集权限；T/管理员权限转移与盟主任免队长。
+- 加入密码、审核证据、当前 T 权限持有者与盟主双签；任一方同意即加入，单方拒绝不会阻断另一方审批。
+- 本地客户端 HTTP 批量上报、token 哈希认证、批次幂等、星体/舰队/共享度快照、roster、维护与换星系处理。
+- 地图恢复、roster 移出与跨图自动加入、数据号离盟下线和创建者手动恢复。
+- 地图合并申请与目标创建者审批、历史版本档案馆。
+- WebSocket Cookie 认证、地图订阅/退订和心跳骨架；业务推送事件尚未启用。
+- §11 权限状态机 8 项单测，以及密码边界和端到端集成测试。
+
+## 明确不在本波范围
+
+- 本地客户端抓包、扫码登录、协议模拟和轨迹运算（设计文档 §12 真机验证项）。
+- 网页 UI。
+- WebSocket 具体业务消息与三态地图展示。
+
+## 目录
+
+```text
+src/
+  index.js                 服务入口与优雅退出
+  app.js                   Express 装配
+  config.js                环境变量与生产配置检查
+  db/
+    index.js               SQLite 连接和迁移执行器
+    migrations/001_initial.sql
+  lib/                     认证、权限、地图、roster、安全等领域逻辑
+  routes/                  auth / maps / join / permissions / client
+  ws.js                    WebSocket 骨架
+ test/                    权限单测、集成测试、WebSocket 测试
+```
+
+## 本地运行
+
+要求 Node.js 20 或更高版本。
+
+```bash
+npm install
+cp .env.example .env
+# 填写 CODE_HMAC_SECRET 与 SMTP 配置；本地生产模式同样会检查
+npm test
+npm start
+```
+
+开发测试不需要真实 SMTP：测试使用注入的内存邮件捕获器，不会把验证码写入数据库或日志。正常运行必须配置 SMTP，服务不会在响应或日志中返回验证码。
+
+默认监听 `127.0.0.1:9200`，健康检查：
+
+```bash
+curl http://127.0.0.1:9200/healthz
+```
+
+数据库默认位于 `data/lagrange.db`，首次启动自动执行迁移。WAL 模式产生的 `-shm`/`-wal` 文件均被 `.gitignore` 排除。
+
+## API 前缀
+
+所有 REST API 位于 `/api/v1`。经 Caddy 对外暴露时前缀为 `/project/lagrange/api/v1`。
+
+网站认证支持 `Authorization: Bearer <session-token>` 和 HttpOnly Cookie。客户端上报使用独立的 `Authorization: Bearer <client-token>`，两种 token 不混用。WebSocket 只接受会话 Cookie，不把 token 放进 URL 查询参数。
+
+### 账号
+
+| 方法与路径 | 用途 |
+|---|---|
+| `POST /auth/email-codes` | 发送 register/login/recovery 验证码 |
+| `POST /auth/register` | 注册；`intent=create` 进入创建向导，`join` 进入地图列表 |
+| `POST /auth/login` | 邮箱+密码登录 |
+| `POST /auth/login/email` | 邮箱+验证码登录 |
+| `POST /auth/logout`、`GET /auth/me` | 退出、当前账号 |
+| `PUT /auth/recovery/question` | 设置自定义找回问题 |
+| `GET /auth/recovery/question?email=` | 读取找回问题 |
+| `POST /auth/recovery/reset` | 验证答案、重置密码并注销全部会话 |
+
+密码规则：至少 8 个字符、bcrypt 输入不超过 72 字节、无空白，字母/数字/特殊符号任意两类。Unicode 字母（含中文）按字母类处理。
+
+### 地图与加入
+
+| 方法与路径 | 用途 |
+|---|---|
+| `GET /maps/wizard-prep` | step1 准备文案 |
+| `POST /maps` | step2 创建草稿；返回 mapId |
+| `GET /maps` | 地图列表，自己的地图置顶 |
+| `GET /maps/:id/wizard` | 客户端在线、首批数据和可激活状态 |
+| `POST /maps/:id/client-tokens` | step3 签发客户端令牌，仅显示一次 |
+| `DELETE /maps/:id/client-tokens/:tokenId` | 撤销客户端令牌 |
+| `POST /maps/:id/activate` | step4 首批数据到达后激活 |
+| `POST /maps/:id/join-requests` | 游戏名+游戏内 ID+加入密码申请；按配置要求证据 |
+| `GET /maps/:id/game-identities?gameName=` | 重名游戏 ID 候选 |
+| `GET /maps/:id/join-requests/inbox` | 当前 T 权限持有者/盟主审批箱 |
+| `POST /maps/:id/join-requests/:requestId/review` | 审批，角色为 `t` 或 `leader` |
+| `POST /maps/:id/join-requests/:requestId/cancel` | 申请人取消 |
+| `GET /maps/join-requests/mine` | 我的申请 |
+
+### 权限与生命周期
+
+| 方法与路径 | 用途 |
+|---|---|
+| `GET /maps/:id/permissions` | 我的角色及可用管理员权限常量 |
+| `POST /maps/:id/permissions/grant` | 管理员子集授予 |
+| `POST /maps/:id/permissions/transfer-t` | 当前持有者转移 T 权限；创建者不变 |
+| `POST /maps/:id/permissions/transfer-admin` | 转移管理员权限集合 |
+| `POST /maps/:id/captains` | 盟主任命队长并指定 teamId |
+| `DELETE /maps/:id/captains/:userId` | 盟主删除队长权限 |
+| `POST /maps/:id/roster/check` | 按当前 roster 移出成员并跨图自动加入 |
+| `POST /maps/:id/restore` | 新星系恢复，模式 same/different_organization |
+| `POST /maps/:id/resume-access` | 数据号回盟后由创建者手动恢复访问 |
+| `GET /maps/:id/archives`、`DELETE .../:archiveId` | 档案馆查看/删除 |
+| `GET /maps/:id/merge-requests` | 查看发出/收到的合并申请 |
+| `POST /maps/:id/merge-requests` | 源地图创建者向目标地图申请合并 |
+| `POST /maps/:id/merge-requests/:requestId/review` | 目标地图创建者审批 |
+
+合并批准后，目标地图保留自身创建者与角色体系；源地图成员及管理员子集复制到目标地图，源地图创建者/T/盟主/队长身份不覆盖目标角色。源地图当前版本进入档案馆、客户端令牌撤销，源地图标记 `merged` 并指向目标地图。
+
+### 客户端上报
+
+`POST /api/v1/client/report`，JSON 上限 2 MB。`protocolVersion` 当前固定为 `weiyang-3.0`，对应设计文档的“未央开拓 3.0”。
+
+```json
+{
+  "batchId": "client-generated-unique-id",
+  "protocolVersion": "weiyang-3.0",
+  "dataAccount": { "gameId": "data-id", "gameName": "数据小号" },
+  "galaxy": { "id": "galaxy-id", "name": "星系名" },
+  "organization": { "id": "org-id", "name": "联合体名" },
+  "serverStatus": "online",
+  "roster": [
+    { "gameId": "data-id", "gameName": "数据小号", "isLeader": false, "teamId": "team-1" }
+  ],
+  "snapshots": [
+    {
+      "observedAt": "2026-11-07T10:00:00.000Z",
+      "gameTime": "optional-game-clock",
+      "bodies": [
+        { "key": "body-1", "name": "建筑名", "type": "base", "x": 1, "y": 2, "z": 0, "features": {} }
+      ],
+      "fleets": [
+        { "key": "fleet-1", "ownerGameId": "player-id", "state": "real", "x": 3, "y": 4, "z": 0, "vx": 0, "vy": 1, "vz": 0, "payload": {} }
+      ],
+      "sharing": { "current": 10, "target": 100, "effect": "效果", "visitsEquivalent": 9 }
+    }
+  ]
+}
+```
+
+- `roster` 可省略；一旦提供，按该版本完整名单替换。
+- `serverStatus`：`online`、`maintenance`、`expedition_ended`。
+- 舰队 `state`：`real`、`estimated`、`invalid`，对应真实/推算/判错。
+- 新批次返回 202；相同 mapId+batchId 且内容完全一致返回 200 且 `duplicate=true`；同 ID 不同内容返回 409。
+- 新星系先写待恢复版本并保留旧版本；只有创建者调用恢复接口后才切换公开当前版本。
+
+### WebSocket
+
+- 直连：`ws://127.0.0.1:9200/ws`
+- 域名：`wss://skylin.xin/project/lagrange/ws`
+- 连接后收到 `ready`；发送 `{ "type": "subscribe", "mapId": "..." }` 订阅，`unsubscribe` 退订。
+- 非订阅消息当前返回 `BUSINESS_EVENTS_NOT_ENABLED`，不伪装成已实现业务推送。
+
+## 验证
+
+```bash
+npm test
+```
+
+覆盖：§11 权限 8/8、密码边界 8/8、注册登录找回、建图上报激活、批次幂等、双签审批、换星系归档恢复、WebSocket 认证订阅。测试数据库位于系统临时目录，每项测试后删除。
+
+部署见 [DEPLOYMENT.md](DEPLOYMENT.md)。
