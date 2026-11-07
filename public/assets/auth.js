@@ -19,7 +19,7 @@ function setMode(mode) {
   const selected = sections[mode] ? mode : 'login';
   for (const [name, section] of Object.entries(sections)) section.hidden = name !== selected;
   for (const button of document.querySelectorAll('[data-mode]')) {
-    button.setAttribute('aria-pressed', String(button.dataset.mode === mode));
+    button.setAttribute('aria-pressed', String(button.dataset.mode === selected));
   }
   showMessage('');
 }
@@ -116,7 +116,6 @@ document.querySelector('#register-form').addEventListener('submit', async (event
 });
 
 document.querySelector('#load-recovery-question').addEventListener('click', async (event) => {
-  event.preventDefault();
   const email = document.querySelector('#recovery-email').value.trim();
   if (!document.querySelector('#recovery-email').reportValidity()) return;
   setBusy(event.currentTarget, true, '正在读取……');

@@ -111,7 +111,7 @@ document.querySelector('#find-identities').addEventListener('click', async (even
   try {
     const data = await api(`/maps/${encodeURIComponent(selectedMap.id)}/game-identities?gameName=${encodeURIComponent(gameName)}`);
     if (!data.candidates.length) {
-      candidates.append(element('p', { className: 'muted small', text: '没有已上报的同名候选，请手动填写游戏内 ID。' }));
+      candidates.append(element('p', { className: 'muted', text: '没有已上报的同名候选，请手动填写游戏内 ID。' }));
     }
     for (const identity of data.candidates) {
       candidates.append(element('button', {

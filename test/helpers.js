@@ -46,9 +46,7 @@ export const reportBody = (overrides = {}) => ({
   galaxy: { id: 'galaxy-1', name: '第一星系' },
   organization: { id: 'org-1', name: '测试联合体' },
   serverStatus: 'online',
-  roster: [
-    { gameId: 'data-account-1', gameName: '数据小号', isLeader: true, teamId: 'team-1' }
-  ],
+  roster: [{ gameId: 'data-account-1', gameName: '数据小号', isLeader: true }],
   snapshots: [{ observedAt: new Date().toISOString(), bodies: [{ key: 'body-1', name: '测试基地', type: 'base', x: 1, y: 2, features: { level: 3 } }], fleets: [] }],
   ...overrides
 });
