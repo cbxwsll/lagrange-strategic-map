@@ -8,11 +8,12 @@
 
 - 邮箱验证码注册、密码/验证码登录、自定义问题找回；密码和找回答案使用 bcrypt 哈希。
 - 可运行时切换的全站内测门槛：页面、API 与 WebSocket 统一校验 7 天签名 cookie；停用码立即失效，注册不再单独要求邀请码。
-- 会话、验证码状态、限流计数、地图、权限、申请和快照全部落 SQLite，不把地图数据驻留内存。
-- 游戏内 ID 作为唯一身份基准，游戏名仅用于显示与重名候选查询。
-- 地图创建向导 step1–step4 所需 API、客户端令牌、首批数据激活。
+- 网站账号会话、成员通行会话、验证码状态、限流计数、地图、权限、申请和快照全部落 SQLite，不把地图数据驻留内存。
+- 游戏内 ID 作为唯一身份基准，游戏名仅用于显示与重名候选查询；加入地图不绑定网站账号。
+- 创建向导按准备→部署客户端→地图信息→完成执行，创建者身份、星系和联合体只接受客户端上报值。
 - 创建者、T 权限、盟主、小队队长、管理员子集权限；T/管理员权限转移与盟主任免队长。
-- 加入密码、审核证据、当前 T 权限持有者与盟主双签；任一方同意即加入，单方拒绝不会阻断另一方审批。
+- 无账号访客凭游戏名和加入密码申请，重名时必须选择候选游戏内 ID；当前 T 权限持有者与盟主双签，任一方同意即加入。
+- 审批通过后，申请人凭独立回执领取绑定地图+游戏身份的 7 天 HttpOnly 成员通行 cookie，可访问对应地图 API 和 WebSocket。
 - 本地客户端 HTTP 批量上报、token 哈希认证、批次幂等、星体/舰队/共享度快照、roster、维护与换星系处理。
 - 地图恢复、roster 移出与跨图自动加入、数据号离盟下线和创建者手动恢复。
 - 地图合并申请与目标创建者审批、历史版本档案馆。
@@ -39,6 +40,7 @@ src/
     migrations/001_initial.sql
     migrations/002_invites.sql
     migrations/003_beta_gate.sql
+    migrations/004_guest_members_and_auto_wizard.sql
   invite.js                 内测通行码命令行管理入口
   lib/                     认证、权限、地图、roster、安全等领域逻辑
   routes/                  auth / maps / display / join / permissions / client
@@ -85,7 +87,7 @@ npm run invite -- add '在此填入通行码' --name '绑定名'
 
 所有 REST API 位于 `/api/v1`。经 Caddy 对外暴露时前缀为 `/project/lagrange/api/v1`。
 
-网站认证支持 `Authorization: Bearer <session-token>` 和 HttpOnly Cookie。客户端上报使用独立的 `Authorization: Bearer <client-token>`，两种 token 不混用。WebSocket 的账号认证只接受会话 Cookie，不把 token 放进 URL 查询参数；内测门槛开启时还必须同时携带有效通行 cookie。
+网站认证支持 `Authorization: Bearer <session-token>` 和 HttpOnly Cookie。无账号成员使用独立的 `lagrange_member` Cookie，绑定单个地图与游戏身份，不等同于网站账号或内测通行 Cookie。客户端上报使用独立的 `Authorization: Bearer <client-token>`，三种 token 不混用。WebSocket 只接受网站会话或成员会话 Cookie，不把 token 放进 URL 查询参数；内测门槛开启时还必须同时携带有效通行 cookie。
 
 ### 账号
 
@@ -111,19 +113,23 @@ npm run invite -- add '在此填入通行码' --name '绑定名'
 | 方法与路径 | 用途 |
 |---|---|
 | `GET /maps/wizard-prep` | step1 准备文案 |
-| `POST /maps` | step2 创建草稿；返回 mapId |
+| `POST /maps` | step2 创建空草稿；返回 mapId |
 | `GET /maps` | 地图列表，自己的地图置顶 |
-| `GET /maps/:id/wizard` | 客户端在线、首批数据和可激活状态 |
-| `POST /maps/:id/client-tokens` | step3 签发客户端令牌，仅显示一次 |
+| `GET /maps/:id/wizard` | 客户端在线、首批数据、自动身份候选与默认地图名 |
+| `POST /maps/:id/client-tokens` | step2 签发客户端令牌，仅显示一次 |
 | `DELETE /maps/:id/client-tokens/:tokenId` | 撤销客户端令牌 |
-| `POST /maps/:id/activate` | step4 首批数据到达后激活 |
+| `POST /maps/:id/wizard` | step3 确认自动身份并设置地图名、审核开关和加入密码 |
+| `POST /maps/:id/activate` | step4 首批数据与地图信息齐全后激活 |
 | `GET /maps/:id/display` | 最新快照；支持 search、featureKey、featureValue 查询 |
-| `POST /maps/:id/join-requests` | 游戏名+游戏内 ID+加入密码申请；按配置要求证据 |
+| `POST /maps/:id/join-requests` | 无需网站账号；游戏名+加入密码申请，重名时附候选游戏内 ID |
+| `POST /maps/:id/join-requests/:requestId/session` | 申请人凭回执查询状态；通过后签发成员通行 cookie |
 | `GET /maps/:id/game-identities?gameName=` | 重名游戏 ID 候选 |
 | `GET /maps/:id/join-requests/inbox` | 当前 T 权限持有者/盟主审批箱 |
 | `POST /maps/:id/join-requests/:requestId/review` | 审批，角色为 `t` 或 `leader` |
 | `POST /maps/:id/join-requests/:requestId/cancel` | 申请人取消 |
 | `GET /maps/join-requests/mine` | 我的申请 |
+
+加入申请返回一次性展示的高熵回执，服务端只存其 SHA-256 哈希。页面将回执保存在当前标签页的 `sessionStorage` 中并轮询状态；审批接口不会给审批人签发申请人 cookie。成员 membership 以 `map_id + game_identity_id` 为准，`user_id` 可为空。成员 cookie 默认 7 天过期，可用 `MEMBER_SESSION_TTL_DAYS` 调整，不能用于其他地图。
 
 ### 权限与生命周期
 
@@ -195,6 +201,6 @@ npm run invite -- add '在此填入通行码' --name '绑定名'
 npm test
 ```
 
-覆盖：§11 权限 8/8、密码边界 8/8、注册登录找回、内测门槛开关、页面/API 拦截、错码/对码/停用、cookie 签名与有效期、种码命令、欢迎分支、建图上报激活、批次幂等、双签审批、换星系归档恢复、WebSocket 认证订阅与内测门槛、静态页面、运行时地址、真实快照筛选和页面初始化会话。测试数据库位于系统临时目录，每项测试后删除。
+覆盖：§11 权限 8/8、密码边界 8/8、注册登录找回、内测门槛、旧库迁移、客户端自动向导、未上报置灰条件、错密码、重名强制消歧、无账号双签审批、成员 cookie 的地图/display/WebSocket 访问与跨图拒绝、换星系恢复、静态页面和真实快照筛选。测试数据库位于系统临时目录，每项测试后删除。另以 iPhone 仿真执行创建到免注册加入的完整浏览器流程。
 
 部署见 [DEPLOYMENT.md](DEPLOYMENT.md)。
