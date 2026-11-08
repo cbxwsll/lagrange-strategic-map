@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { authenticated, audit } from '../lib/auth.js';
 import { asyncRoute, fail } from '../lib/errors.js';
+import { mapViewAuthenticated, viewerForMap } from '../lib/member-auth.js';
 import { ensureMembership } from '../lib/identities.js';
 import {
   archiveVersion, currentVersion, getMap, getMember, getVersion,
@@ -11,9 +12,9 @@ import { assertArchiveDelete } from '../lib/permissions.js';
 import { reconcileRoster } from '../lib/roster.js';
 import { assertPasswordComplexity, hashPassword, now, randomToken, hashToken, uuid } from '../lib/security.js';
 
-const mapInput = z.object({
+const wizardInfoInput = z.object({
   name: z.string().trim().min(1).max(80),
-  creatorGameName: z.string().trim().min(1).max(80),
+  creatorGameIdentityId: z.string().uuid(),
   reviewRequired: z.boolean().default(false),
   joinPassword: z.string().min(1).max(72)
 });
@@ -31,6 +32,17 @@ function contextView(context) {
   };
 }
 
+function creatorCandidates(database, context) {
+  if (!context) return [];
+  const rows = database.prepare(`SELECT DISTINCT game_identities.id, game_identities.game_id, game_identities.game_name
+    FROM game_identities LEFT JOIN map_roster ON map_roster.game_identity_id = game_identities.id
+      AND map_roster.version_id = ?
+    WHERE game_identities.id = ? OR map_roster.game_identity_id IS NOT NULL
+    ORDER BY game_identities.game_name, game_identities.game_id`)
+    .all(context.version_id, context.game_identity_id);
+  return rows.map((row) => ({ id: row.id, gameId: row.game_id, gameName: row.game_name }));
+}
+
 export function createMapsRouter(config) {
   const router = Router();
 
@@ -43,43 +55,63 @@ export function createMapsRouter(config) {
   });
 
   router.get('/', (req, res) => {
+    const memberMapId = req.memberSession?.map_id || null;
+    const memberIdentityId = req.memberSession?.game_identity_id || null;
     const maps = req.app.locals.db.prepare(`SELECT DISTINCT maps.* FROM maps
-      LEFT JOIN map_memberships mine ON mine.map_id = maps.id AND mine.user_id = ? AND mine.status = 'active'
+      LEFT JOIN map_memberships mine ON mine.map_id = maps.id AND mine.status = 'active' AND (
+        (? IS NOT NULL AND mine.user_id = ?) OR
+        (? IS NOT NULL AND mine.map_id = ? AND mine.game_identity_id = ?)
+      )
       WHERE maps.status NOT IN ('draft', 'merged') OR maps.creator_user_id = ? OR mine.id IS NOT NULL
       ORDER BY CASE WHEN mine.id IS NOT NULL THEN 0 ELSE 1 END, maps.created_at DESC LIMIT 200`)
-      .all(req.user?.id || null, req.user?.id || null);
-    res.json({ maps: maps.map((map) => serializeMap(req.app.locals.db, map, req.user?.id || null)) });
+      .all(req.user?.id || null, req.user?.id || null, memberMapId, memberMapId,
+        memberIdentityId, req.user?.id || null);
+    res.json({ maps: maps.map((map) => {
+      const viewer = viewerForMap(req, map.id);
+      return serializeMap(req.app.locals.db, map, viewer.userId, viewer.gameIdentityId);
+    }) });
+  });
+
+  router.get('/:mapId', mapViewAuthenticated, (req, res) => {
+    const map = getMap(req.app.locals.db, req.params.mapId);
+    const viewer = viewerForMap(req, map.id);
+    requireMapView(req.app.locals.db, map, viewer.userId, viewer.gameIdentityId);
+    res.json({ map: serializeMap(req.app.locals.db, map, viewer.userId, viewer.gameIdentityId) });
+  });
+
+  router.get('/:mapId/archives', mapViewAuthenticated, (req, res) => {
+    const database = req.app.locals.db;
+    const map = getMap(database, req.params.mapId);
+    const viewer = viewerForMap(req, map.id);
+    requireMapView(database, map, viewer.userId, viewer.gameIdentityId);
+    const rows = database.prepare(`SELECT archives.*, map_versions.galaxy_name, map_versions.organization_name FROM archives
+      JOIN map_versions ON map_versions.id = archives.version_id
+      WHERE archives.map_id = ? OR archives.map_id IN (SELECT id FROM maps WHERE merged_into_map_id = ?)
+      ORDER BY archives.created_at DESC LIMIT 200`).all(map.id, map.id);
+    res.json({ archives: rows.map((row) => ({ id: row.id, mapId: row.map_id, versionId: row.version_id, reason: row.reason,
+      galaxyName: row.galaxy_name, organizationName: row.organization_name, summary: JSON.parse(row.summary_json), createdAt: row.created_at })) });
   });
 
   router.use(authenticated);
 
   router.post('/', asyncRoute(async (req, res) => {
-    const input = mapInput.parse(req.body);
-    assertPasswordComplexity(input.joinPassword, 'joinPassword');
-    const joinPasswordHash = await hashPassword(input.joinPassword, config.bcryptRounds);
+    z.object({}).strict().parse(req.body || {});
     const database = req.app.locals.db;
     const mapId = uuid();
     const memberId = uuid();
     const timestamp = now();
     database.transaction(() => {
       database.prepare(`INSERT INTO maps
-        (id, creator_user_id, name, creator_game_name, join_password_hash, review_required, status, wizard_step, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'draft', 3, ?, ?)`)
-        .run(mapId, req.user.id, input.name, input.creatorGameName, joinPasswordHash,
-          input.reviewRequired ? 1 : 0, timestamp, timestamp);
+        (id, creator_user_id, status, wizard_step, created_at, updated_at)
+        VALUES (?, ?, 'draft', 2, ?, ?)`)
+        .run(mapId, req.user.id, timestamp, timestamp);
       database.prepare(`INSERT INTO map_memberships
         (id, map_id, user_id, is_creator, is_t_holder, joined_at, updated_at) VALUES (?, ?, ?, 1, 1, ?, ?)`)
         .run(memberId, mapId, req.user.id, timestamp, timestamp);
-      audit(database, mapId, req.user.id, 'map.created', mapId, { name: input.name });
+      audit(database, mapId, req.user.id, 'map.created', mapId);
     })();
     res.status(201).json({ map: serializeMap(database, database.prepare('SELECT * FROM maps WHERE id = ?').get(mapId), req.user.id) });
   }));
-
-  router.get('/:mapId', (req, res) => {
-    const map = getMap(req.app.locals.db, req.params.mapId);
-    requireMapView(req.app.locals.db, map, req.user.id);
-    res.json({ map: serializeMap(req.app.locals.db, map, req.user.id) });
-  });
 
   router.get('/:mapId/wizard', (req, res) => {
     const database = req.app.locals.db;
@@ -87,14 +119,48 @@ export function createMapsRouter(config) {
     requireCreator(database, map, req.user.id);
     const context = database.prepare('SELECT * FROM client_contexts WHERE map_id = ?').get(map.id);
     const snapshots = context ? database.prepare('SELECT COUNT(*) AS count FROM map_snapshots WHERE version_id = ?').get(context.version_id).count : 0;
+    const client = contextView(context);
+    const candidates = creatorCandidates(database, context);
+    const ready = Boolean(context && snapshots > 0 && client.online && candidates.length);
     res.json({
       step: map.wizard_step,
       map: serializeMap(database, map, req.user.id),
-      client: contextView(context),
+      client,
+      creatorCandidates: candidates,
+      suggestedName: context ? `（${context.organization_name}）的地图` : null,
       firstDataReceived: snapshots > 0,
-      canActivate: Boolean(context && snapshots > 0)
+      canContinueToInfo: ready,
+      canActivate: Boolean(ready && map.name && map.creator_game_identity_id && map.join_password_hash)
     });
   });
+
+  router.post('/:mapId/wizard', asyncRoute(async (req, res) => {
+    const input = wizardInfoInput.parse(req.body);
+    assertPasswordComplexity(input.joinPassword, 'joinPassword');
+    const database = req.app.locals.db;
+    const map = getMap(database, req.params.mapId);
+    requireCreator(database, map, req.user.id);
+    if (map.status !== 'draft') fail(409, 'MAP_NOT_DRAFT', '地图不处于创建向导状态');
+    const context = database.prepare('SELECT * FROM client_contexts WHERE map_id = ?').get(map.id);
+    const snapshots = context ? database.prepare('SELECT COUNT(*) AS count FROM map_snapshots WHERE version_id = ?').get(context.version_id).count : 0;
+    const candidates = creatorCandidates(database, context);
+    if (!context || !snapshots || !contextView(context).online) {
+      fail(409, 'CLIENT_CONTEXT_REQUIRED', '客户端上线、登录并选择势力后才能填写地图信息');
+    }
+    const identity = candidates.find((candidate) => candidate.id === input.creatorGameIdentityId);
+    if (!identity) fail(400, 'CREATOR_IDENTITY_INVALID', '创建者游戏身份必须从客户端上报的候选中选择');
+    const joinPasswordHash = await hashPassword(input.joinPassword, config.bcryptRounds);
+    database.transaction(() => {
+      database.prepare(`UPDATE maps SET name = ?, creator_game_name = ?, creator_game_identity_id = ?,
+        join_password_hash = ?, review_required = ?, wizard_step = 3, updated_at = ? WHERE id = ?`)
+        .run(input.name, identity.gameName, identity.id, joinPasswordHash, input.reviewRequired ? 1 : 0, now(), map.id);
+      const membership = database.prepare('SELECT * FROM map_memberships WHERE map_id = ? AND user_id = ?').get(map.id, req.user.id);
+      database.prepare('UPDATE map_memberships SET game_identity_id = ?, updated_at = ? WHERE id = ?')
+        .run(identity.id, now(), membership.id);
+      audit(database, map.id, req.user.id, 'map.wizard_completed', map.id, { creatorGameIdentityId: identity.id });
+    })();
+    res.json({ map: serializeMap(database, getMap(database, map.id), req.user.id) });
+  }));
 
   router.post('/:mapId/client-tokens', (req, res) => {
     const database = req.app.locals.db;
@@ -130,6 +196,9 @@ export function createMapsRouter(config) {
     const context = database.prepare('SELECT * FROM client_contexts WHERE map_id = ?').get(map.id);
     const snapshots = context ? database.prepare('SELECT COUNT(*) AS count FROM map_snapshots WHERE version_id = ?').get(context.version_id).count : 0;
     if (!context || !snapshots) fail(409, 'FIRST_DATA_REQUIRED', '首批客户端数据到达后才能激活地图');
+    if (!map.name || !map.creator_game_identity_id || !map.join_password_hash) {
+      fail(409, 'MAP_INFO_REQUIRED', '确认自动上报信息并设置加入密码后才能激活地图');
+    }
     database.prepare("UPDATE maps SET current_version_id = ?, status = 'active', wizard_step = 4, activated_at = ?, updated_at = ? WHERE id = ?")
       .run(context.version_id, now(), now(), map.id);
     audit(database, map.id, req.user.id, 'map.activated', map.id);
@@ -182,18 +251,6 @@ export function createMapsRouter(config) {
       audit(database, map.id, req.user.id, 'map.restored', next.id, { mode: input.mode, ...result });
     })();
     res.json({ map: serializeMap(database, getMap(database, map.id), req.user.id), roster: result });
-  });
-
-  router.get('/:mapId/archives', (req, res) => {
-    const database = req.app.locals.db;
-    const map = getMap(database, req.params.mapId);
-    requireMapView(database, map, req.user.id);
-    const rows = database.prepare(`SELECT archives.*, map_versions.galaxy_name, map_versions.organization_name FROM archives
-      JOIN map_versions ON map_versions.id = archives.version_id
-      WHERE archives.map_id = ? OR archives.map_id IN (SELECT id FROM maps WHERE merged_into_map_id = ?)
-      ORDER BY archives.created_at DESC LIMIT 200`).all(map.id, map.id);
-    res.json({ archives: rows.map((row) => ({ id: row.id, mapId: row.map_id, versionId: row.version_id, reason: row.reason,
-      galaxyName: row.galaxy_name, organizationName: row.organization_name, summary: JSON.parse(row.summary_json), createdAt: row.created_at })) });
   });
 
   router.delete('/:mapId/archives/:archiveId', (req, res) => {
@@ -252,7 +309,13 @@ export function createMapsRouter(config) {
       const source = getMap(database, request.source_map_id);
       const sourceMembers = database.prepare("SELECT * FROM map_memberships WHERE map_id = ? AND status = 'active'").all(source.id);
       for (const member of sourceMembers) {
-        const copied = ensureMembership(database, target.id, member.user_id, member.game_identity_id);
+        const identityOwner = member.game_identity_id
+          ? database.prepare('SELECT user_id FROM map_memberships WHERE map_id = ? AND game_identity_id = ?').get(target.id, member.game_identity_id)
+          : null;
+        const identityId = member.user_id && identityOwner && identityOwner.user_id !== member.user_id
+          ? null
+          : member.game_identity_id;
+        const copied = ensureMembership(database, target.id, member.user_id, identityId);
         const permissions = database.prepare('SELECT permission FROM map_admin_permissions WHERE member_id = ?').all(member.id);
         for (const row of permissions) {
           database.prepare('INSERT OR IGNORE INTO map_admin_permissions (member_id, permission, granted_by, created_at) VALUES (?, ?, NULL, ?)')

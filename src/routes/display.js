@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { authenticated } from '../lib/auth.js';
+import { mapViewAuthenticated, viewerForMap } from '../lib/member-auth.js';
 import { getMap, requireMapView } from '../lib/maps.js';
 
 const filterInput = z.object({
@@ -24,13 +24,13 @@ function featuresForSnapshot(db, snapshotId) {
 
 export function createDisplayRouter() {
   const router = Router();
-  router.use(authenticated);
 
-  router.get('/:mapId/display', (req, res) => {
+  router.get('/:mapId/display', mapViewAuthenticated, (req, res) => {
     const input = filterInput.parse(req.query);
     const database = req.app.locals.db;
     const map = getMap(database, req.params.mapId);
-    requireMapView(database, map, req.user.id);
+    const viewer = viewerForMap(req, map.id);
+    requireMapView(database, map, viewer.userId, viewer.gameIdentityId);
     const empty = { mapId: map.id, empty: true, snapshot: null, bodies: [], fleets: [], sharing: null, features: [] };
     if (!map.current_version_id) return res.json(empty);
     const snapshot = database.prepare(`SELECT * FROM map_snapshots

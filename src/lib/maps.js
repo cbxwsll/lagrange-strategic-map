@@ -16,33 +16,38 @@ export function currentVersion(db, map) {
   return getVersion(db, map.current_version_id);
 }
 
-export function getMember(db, mapId, userId) {
-  return db.prepare(`SELECT * FROM map_memberships WHERE map_id = ? AND user_id = ? AND status = 'active'`).get(mapId, userId);
+export function getMember(db, mapId, userId = null, gameIdentityId = null) {
+  return db.prepare(`SELECT * FROM map_memberships WHERE map_id = ? AND status = 'active' AND (
+    (? IS NOT NULL AND user_id = ?) OR (? IS NOT NULL AND game_identity_id = ?)
+  ) ORDER BY is_creator DESC LIMIT 1`).get(mapId, userId, userId, gameIdentityId, gameIdentityId);
 }
 
 export function requireCreator(db, map, userId) {
-  if (map.creator_user_id !== userId) fail(403, 'CREATOR_ONLY', '只有地图创建者可以执行此操作');
+  if (!userId || map.creator_user_id !== userId) fail(403, 'CREATOR_ONLY', '只有地图创建者可以执行此操作');
 }
 
-export function requireMapView(db, map, userId) {
-  const member = getMember(db, map.id, userId);
+export function requireMapView(db, map, userId = null, gameIdentityId = null) {
+  const member = getMember(db, map.id, userId, gameIdentityId);
   const actor = actorFromMembership(member, member ? adminPermissionsFor(db, member.id) : []);
   if (!canViewMap(map, actor)) fail(403, 'MAP_UNAVAILABLE', '地图当前不可查看');
   return { member, actor };
 }
 
-export function serializeMap(db, map, userId = null) {
+export function serializeMap(db, map, userId = null, gameIdentityId = null) {
   const version = currentVersion(db, map);
   const organizationName = version?.organization_name || '联合体待上报';
-  const membership = userId ? getMember(db, map.id, userId) : null;
+  const membership = getMember(db, map.id, userId, gameIdentityId);
+  const defaultName = `（${organizationName}）的地图`;
+  const displayName = map.name === defaultName ? map.name : `（${organizationName}）的（${map.name || '未命名'}）的地图`;
   return {
     id: map.id,
     name: map.name,
-    displayName: `（${organizationName}）的（${map.name}）的地图`,
+    displayName,
     status: map.status,
     reviewRequired: Boolean(map.review_required),
     wizardStep: map.wizard_step,
     creatorUserId: map.creator_user_id,
+    creatorGameIdentityId: map.creator_game_identity_id || null,
     organization: version ? { id: version.organization_id, name: version.organization_name } : null,
     galaxy: version ? { id: version.galaxy_id, name: version.galaxy_name } : null,
     joined: Boolean(membership),
@@ -84,6 +89,6 @@ export function archiveVersion(db, map, version, reason) {
     }), timestamp);
 }
 
-export function mapActor(db, mapId, userId) {
-  return loadActor(db, mapId, userId);
+export function mapActor(db, mapId, userId = null, gameIdentityId = null) {
+  return loadActor(db, mapId, userId, gameIdentityId);
 }

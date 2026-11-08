@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import helmet from 'helmet';
 import { optionalAuth } from './lib/auth.js';
+import { optionalMemberAuth } from './lib/member-auth.js';
 import { betaGate, createBetaRouter } from './lib/beta.js';
 import { errorMiddleware } from './lib/errors.js';
 import { createMailer } from './lib/mailer.js';
@@ -32,6 +33,7 @@ export function buildApp({ config, db, mailer }) {
     next();
   });
   app.use(optionalAuth);
+  app.use(optionalMemberAuth);
   app.use(betaGate(config));
 
   app.get('/healthz', (req, res) => {
@@ -41,9 +43,9 @@ export function buildApp({ config, db, mailer }) {
   app.use('/api/v1/beta/enter', createBetaRouter(config));
   app.use('/api/v1/auth', createAuthRouter(config, mailer || createMailer(config)));
   app.use('/api/v1/client', createClientRouter());
-  app.use('/api/v1/maps', createMapsRouter(config));
+  app.use('/api/v1/maps', createJoinRouter(config));
   app.use('/api/v1/maps', createDisplayRouter());
-  app.use('/api/v1/maps', createJoinRouter());
+  app.use('/api/v1/maps', createMapsRouter(config));
   app.use('/api/v1/maps', createPermissionsRouter());
   app.use('/api', (req, res) => res.status(404).json({ error: { code: 'NOT_FOUND', message: 'API 路径不存在' } }));
 

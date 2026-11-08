@@ -45,6 +45,7 @@ export function loadConfig(env = process.env) {
     dbPath: path.resolve(rootDir, env.DB_PATH || './data/lagrange.db'),
     codeHmacSecret,
     sessionTtlDays: integer(env.SESSION_TTL_DAYS, 30, { max: 365 }),
+    memberSessionTtlDays: integer(env.MEMBER_SESSION_TTL_DAYS, 7, { max: 30 }),
     bcryptRounds: integer(env.BCRYPT_ROUNDS, 12, { min: 10, max: 14 }),
     cookieSecure: env.COOKIE_SECURE !== 'false',
     betaInviteRequired: boolean(env.BETA_INVITE_REQUIRED, false),

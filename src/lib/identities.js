@@ -20,14 +20,17 @@ export function upsertGameIdentity(db, { gameId, gameName, avatarUrl = null, use
   return db.prepare('SELECT * FROM game_identities WHERE id = ?').get(id);
 }
 
-export function ensureMembership(db, mapId, userId, gameIdentityId = null) {
-  const existing = db.prepare('SELECT * FROM map_memberships WHERE map_id = ? AND user_id = ?').get(mapId, userId);
+export function ensureMembership(db, mapId, userId = null, gameIdentityId = null) {
+  const existing = userId
+    ? db.prepare('SELECT * FROM map_memberships WHERE map_id = ? AND user_id = ?').get(mapId, userId)
+    : gameIdentityId
+      ? db.prepare('SELECT * FROM map_memberships WHERE map_id = ? AND game_identity_id = ?').get(mapId, gameIdentityId)
+      : null;
   const timestamp = now();
   if (existing) {
-    if (existing.status !== 'active' || (gameIdentityId && existing.game_identity_id !== gameIdentityId)) {
-      db.prepare(`UPDATE map_memberships SET status = 'active', game_identity_id = COALESCE(?, game_identity_id),
-        updated_at = ? WHERE id = ?`).run(gameIdentityId, timestamp, existing.id);
-    }
+    db.prepare(`UPDATE map_memberships SET status = 'active',
+      user_id = COALESCE(user_id, ?), game_identity_id = COALESCE(game_identity_id, ?), updated_at = ?
+      WHERE id = ?`).run(userId, gameIdentityId, timestamp, existing.id);
     return db.prepare('SELECT * FROM map_memberships WHERE id = ?').get(existing.id);
   }
   const id = uuid();

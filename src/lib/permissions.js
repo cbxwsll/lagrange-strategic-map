@@ -69,9 +69,12 @@ export function adminPermissionsFor(db, memberId) {
   return db.prepare('SELECT permission FROM map_admin_permissions WHERE member_id = ?').all(memberId).map((row) => row.permission);
 }
 
-export function loadActor(db, mapId, userId) {
+export function loadActor(db, mapId, userId = null, gameIdentityId = null) {
   const member = db.prepare(`SELECT * FROM map_memberships
-    WHERE map_id = ? AND user_id = ? AND status = 'active'`).get(mapId, userId);
+    WHERE map_id = ? AND status = 'active' AND (
+      (? IS NOT NULL AND user_id = ?) OR (? IS NOT NULL AND game_identity_id = ?)
+    ) ORDER BY is_creator DESC LIMIT 1`)
+    .get(mapId, userId, userId, gameIdentityId, gameIdentityId);
   return actorFromMembership(member, member ? adminPermissionsFor(db, member.id) : []);
 }
 

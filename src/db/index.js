@@ -23,9 +23,16 @@ export function openDatabase(config) {
     db.exec(sql);
     db.prepare('INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)').run(name, new Date().toISOString());
   });
-  for (const name of files) {
-    if (!applied.has(name)) apply(name, fs.readFileSync(path.join(migrationsDir, name), 'utf8'));
+  db.pragma('foreign_keys = OFF');
+  try {
+    for (const name of files) {
+      if (!applied.has(name)) apply(name, fs.readFileSync(path.join(migrationsDir, name), 'utf8'));
+    }
+  } finally {
+    db.pragma('foreign_keys = ON');
   }
+  const violations = db.pragma('foreign_key_check');
+  if (violations.length) throw new Error(`数据库迁移后外键校验失败：${JSON.stringify(violations)}`);
   return db;
 }
 

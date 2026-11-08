@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { z } from 'zod';
 import { tokenFromWebSocketRequest, userForToken } from './lib/auth.js';
+import { memberSessionForToken, memberTokenFromWebSocketRequest } from './lib/member-auth.js';
 import { betaInviteFromRequest } from './lib/beta.js';
 import { getMap, requireMapView } from './lib/maps.js';
 
@@ -21,21 +22,23 @@ export function setupWebSocket(server, db, config) {
       return;
     }
     const user = userForToken(db, tokenFromWebSocketRequest(req));
-    if (!user) {
+    const memberSession = memberSessionForToken(db, memberTokenFromWebSocketRequest(req));
+    if (!user && !memberSession) {
       socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
       socket.destroy();
       return;
     }
-    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req, user));
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req, { user, memberSession }));
   });
 
-  wss.on('connection', (ws, req, user) => {
+  wss.on('connection', (ws, req, principal) => {
+    const { user, memberSession } = principal;
     ws.upgradeReq = req;
-    ws.userId = user.id;
+    ws.userId = user?.id || null;
     ws.mapSubscriptions = new Set();
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
-    send(ws, { type: 'ready', protocolVersion: 1, userId: user.id, businessEvents: false });
+    send(ws, { type: 'ready', protocolVersion: 1, userId: user?.id || null, gameIdentityId: memberSession?.game_identity_id || null, businessEvents: false });
     ws.on('message', (data) => {
       if (!hasBetaAccess(req)) {
         send(ws, { type: 'error', code: 'BETA_REQUIRED', message: '内测通行码已失效，请重新输入' });
@@ -50,7 +53,8 @@ export function setupWebSocket(server, db, config) {
         if (message.type === 'subscribe') {
           const input = z.object({ mapId: z.string().uuid() }).parse(message);
           const map = getMap(db, input.mapId);
-          requireMapView(db, map, user.id);
+          const member = memberSession?.map_id === map.id ? memberSession : null;
+          requireMapView(db, map, user?.id || null, member?.game_identity_id || null);
           ws.mapSubscriptions.add(map.id);
           return send(ws, { type: 'subscribed', mapId: map.id });
         }
