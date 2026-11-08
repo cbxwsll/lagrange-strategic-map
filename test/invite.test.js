@@ -162,6 +162,7 @@ test('旧注册邀请表升级时保留码、绑定名和计数，删除次数�
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const dbPath = path.join(directory, 'migration.db');
   const old = new Database(dbPath);
+  old.exec(fs.readFileSync(path.join(rootDirectory, 'src/db/migrations/001_initial.sql'), 'utf8'));
   old.exec('CREATE TABLE schema_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)');
   old.prepare('INSERT INTO schema_migrations VALUES (?, ?)').run('001_initial.sql', new Date().toISOString());
   old.exec(fs.readFileSync(path.join(rootDirectory, 'src/db/migrations/002_invites.sql'), 'utf8'));
