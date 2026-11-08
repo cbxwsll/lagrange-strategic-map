@@ -60,7 +60,7 @@ pm2 restart lagrange-strategic-map --update-env
 curl --fail http://127.0.0.1:9200/healthz
 ```
 
-`npm test` 使用独立临时数据库，不接触生产 `data/`。Node 大版本升级后，如 better-sqlite3 报 ABI 错误，在项目目录执行 `npm rebuild` 再重启。
+`npm test` 使用独立临时数据库，不接触生产 `data/`。本波 `004_guest_members_and_auto_wizard.sql` 会重建 maps、memberships 和 join_requests 以允许无账号游戏身份成员，并新增 member_sessions；执行前必须按上方命令备份 data，启动后会自动做外键一致性检查。Node 大版本升级后，如 better-sqlite3 报 ABI 错误，在项目目录执行 `npm rebuild` 再重启。
 
 ## 4. Caddy 路径分发
 
@@ -118,6 +118,6 @@ pm2 restart lagrange-strategic-map --update-env
 - SQLite：`data/lagrange.db` 及其 WAL 文件；备份时同时保留数据库与 WAL，或在低峰执行 SQLite 在线备份。
 - `.env`：只存在服务器，权限 600，不提交、不打包进公开仓库。
 - 用户密码、找回答案：数据库仅保存 bcrypt 哈希。
-- 会话 token、客户端 token：数据库仅保存 SHA-256 哈希；客户端明文令牌仅签发时显示一次。
+- 网站会话 token、成员通行 token、客户端 token、加入申请回执：数据库仅保存 SHA-256 哈希；明文只在签发时返回。成员 cookie 默认 7 天有效，以 `MEMBER_SESSION_TTL_DAYS` 配置，并绑定地图和游戏身份。
 - 邮箱验证码：数据库仅保存带用途和邮箱域分离的 HMAC，默认 10 分钟有效、5 次尝试上限、60 秒重发间隔。
 - 日志只记录方法、路径、状态码和耗时，不记录请求体、Authorization、Cookie 或 SMTP 内容。
