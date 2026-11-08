@@ -57,9 +57,7 @@ test('§9 地图只读接口返回真实快照并支持建筑名和特征筛选'
   t.after(() => context.close());
   const request = supertest(context.app);
   const creator = await registerUser(request, context, { email: 'display@example.com' });
-  const created = await request.post('/api/v1/maps').set(auth(creator)).send({
-    name: '展示图', creatorGameName: '创建者', reviewRequired: false, joinPassword: 'joinpass1!'
-  }).expect(201);
+  const created = await request.post('/api/v1/maps').set(auth(creator)).send({}).expect(201);
   const mapId = created.body.map.id;
   const token = (await request.post(`/api/v1/maps/${mapId}/client-tokens`).set(auth(creator)).send({}).expect(201)).body.token;
   await request.post('/api/v1/client/report').set('Authorization', `Bearer ${token}`).send(reportBody({
@@ -77,6 +75,11 @@ test('§9 地图只读接口返回真实快照并支持建筑名和特征筛选'
       sharing: { current: 10, target: 100, effect: '研究加速', visitsEquivalent: 9 }
     }]
   })).expect(202);
+  const wizard = await request.get(`/api/v1/maps/${mapId}/wizard`).set(auth(creator)).expect(200);
+  await request.post(`/api/v1/maps/${mapId}/wizard`).set(auth(creator)).send({
+    name: '展示图', creatorGameIdentityId: wizard.body.creatorCandidates[0].id,
+    reviewRequired: false, joinPassword: 'joinpass1!'
+  }).expect(200);
   await request.post(`/api/v1/maps/${mapId}/activate`).set(auth(creator)).send({}).expect(200);
 
   await request.get(`/api/v1/maps/${mapId}/display`).expect(401);

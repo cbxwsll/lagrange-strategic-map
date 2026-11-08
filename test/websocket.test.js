@@ -18,11 +18,18 @@ test('WebSocket 骨架：Cookie 认证、订阅与退订', async (t) => {
   });
   const request = supertest(context.app);
   const user = await registerUser(request, context, { email: 'ws@example.com' });
-  const created = await request.post('/api/v1/maps').set(auth(user)).send({ name: 'WS图', creatorGameName: 'WS', joinPassword: 'joinpass1!' }).expect(201);
+  const created = await request.post('/api/v1/maps').set(auth(user)).send({}).expect(201);
   const mapId = created.body.map.id;
   const token = (await request.post(`/api/v1/maps/${mapId}/client-tokens`).set(auth(user)).send({}).expect(201)).body.token;
-  await request.post('/api/v1/client/report').set('Authorization', `Bearer ${token}`).send(reportBody()).expect(202);
-  await request.post(`/api/v1/maps/${mapId}/activate`).set(auth(user)).expect(200);
+  await request.post('/api/v1/client/report').set('Authorization', `Bearer ${token}`).send(reportBody({
+    roster: [{ gameId: 'data-account-1', gameName: '数据小号' }, { gameId: 'guest-ws', gameName: '访客WS' }]
+  })).expect(202);
+  const wizard = await request.get(`/api/v1/maps/${mapId}/wizard`).set(auth(user)).expect(200);
+  await request.post(`/api/v1/maps/${mapId}/wizard`).set(auth(user)).send({
+    name: 'WS图', creatorGameIdentityId: wizard.body.creatorCandidates[0].id,
+    reviewRequired: false, joinPassword: 'joinpass1!'
+  }).expect(200);
+  await request.post(`/api/v1/maps/${mapId}/activate`).set(auth(user)).send({}).expect(200);
   const port = server.address().port;
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, { headers: { Cookie: `lagrange_session=${encodeURIComponent(user.token)}` } });
   const messages = [];
@@ -37,6 +44,21 @@ test('WebSocket 骨架：Cookie 认证、订阅与退订', async (t) => {
   await new Promise((resolve) => setTimeout(resolve, 20));
   assert.ok(messages.some((message) => message.type === 'unsubscribed' && message.mapId === mapId));
   ws.close();
+
+  const join = await request.post(`/api/v1/maps/${mapId}/join-requests`).send({ gameName: '访客WS', joinPassword: 'joinpass1!' }).expect(201);
+  await request.post(`/api/v1/maps/${mapId}/join-requests/${join.body.id}/review`).set(auth(user)).send({ decision: 'approve' }).expect(200);
+  const claimed = await request.post(`/api/v1/maps/${mapId}/join-requests/${join.body.id}/session`).send({ receipt: join.body.receipt }).expect(200);
+  const memberCookie = claimed.headers['set-cookie'][0].split(';')[0];
+  const memberWs = new WebSocket(`ws://127.0.0.1:${port}/ws`, { headers: { Cookie: memberCookie } });
+  const memberMessages = [];
+  memberWs.on('message', (data) => memberMessages.push(JSON.parse(data.toString())));
+  await new Promise((resolve, reject) => { memberWs.once('open', resolve); memberWs.once('error', reject); });
+  memberWs.send(JSON.stringify({ type: 'subscribe', mapId }));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(memberMessages[0].userId, null);
+  assert.ok(memberMessages[0].gameIdentityId);
+  assert.ok(memberMessages.some((message) => message.type === 'subscribed' && message.mapId === mapId));
+  memberWs.close();
 });
 
 
