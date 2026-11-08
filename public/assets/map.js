@@ -1,6 +1,6 @@
 import {
   MAP_STATUS, api, connectMapSocket, currentUser, element, formatTime,
-  goToLogin, renderSession, requiredMapId, showError, showMessage
+  renderSession, requiredMapId, showError, showMessage
 } from './common.js';
 
 const state = { user: null, mapId: null, map: null, display: null, focusBodyKey: null, socket: null, creatorTimer: null };
@@ -240,7 +240,7 @@ async function loadArchives() {
         element('p', { text: `${archive.galaxyName} · ${archive.organizationName}` }),
         element('p', { className: 'muted small', text: `${archive.reason} · ${formatTime(archive.createdAt)} · 快照 ${archive.summary.snapshots ?? 0}` })
       ]);
-      if (state.map.isCreator || state.map.isTHolder || state.map.isLeader) {
+      if (state.user && (state.map.isCreator || state.map.isTHolder || state.map.isLeader)) {
         item.append(element('button', {
           type: 'button', text: '删除档案',
           onclick: async () => {
@@ -348,7 +348,6 @@ window.addEventListener('pagehide', () => {
 async function initialize() {
   try {
     state.user = await currentUser();
-    if (!state.user) { goToLogin('login'); return; }
     renderSession(state.user);
     state.mapId = requiredMapId();
     await loadMap();

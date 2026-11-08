@@ -80,6 +80,10 @@ document.querySelector('#login-form').addEventListener('submit', async (event) =
   }
 });
 
+document.querySelector('#join-map').addEventListener('click', () => {
+  window.location.href = runtime.page('index.html');
+});
+
 document.querySelector('#register-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const submit = event.submitter;

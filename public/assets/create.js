@@ -3,7 +3,10 @@ import {
   runtime, showError, showMessage
 } from './common.js';
 
-const state = { step: 1, mapId: null, map: null, canActivate: false, clientOnline: false, pollTimer: null };
+const state = {
+  step: 1, mapId: null, map: null, canContinue: false, canActivate: false,
+  clientOnline: false, pollTimer: null
+};
 const backButton = document.querySelector('#wizard-back');
 const nextButton = document.querySelector('#wizard-next');
 const infoForm = document.querySelector('#map-info-form');
@@ -11,7 +14,7 @@ const infoForm = document.querySelector('#map-info-form');
 function passwordKey(mapId) { return `lagrange.wizard.${mapId}.joinPassword`; }
 
 function syncNext() {
-  nextButton.disabled = state.step === 3 && !(state.canActivate && state.clientOnline);
+  nextButton.disabled = (state.step === 2 || state.step === 3) && !state.canContinue;
 }
 
 function stopPolling() {
@@ -30,7 +33,7 @@ function setStep(step) {
   nextButton.hidden = step === 4;
   backButton.disabled = step === 1;
   nextButton.textContent = step === 3 ? '激活并完成' : '继续';
-  if (step === 3) pollWizard();
+  if (step === 2) pollWizard();
   else stopPolling();
   if (step === 4) showCompletion();
   syncNext();
@@ -67,11 +70,29 @@ async function issueToken() {
 
 function updateWizard(data) {
   state.map = data.map;
-  state.canActivate = data.canActivate;
+  state.canContinue = Boolean(data.canContinueToInfo);
+  state.canActivate = Boolean(data.canActivate);
   state.clientOnline = Boolean(data.client?.online);
   document.querySelector('#client-online').textContent = `客户端状态：${state.clientOnline ? '在线' : '不在线'}`;
   document.querySelector('#client-last-seen').textContent = `最近同步：${formatTime(data.client?.lastSeenAt)}`;
   document.querySelector('#first-data').textContent = `首批数据：${data.firstDataReceived ? '已到达' : '尚未到达'}`;
+
+  const ready = state.canContinue;
+  const select = document.querySelector('#creator-game-identity');
+  const selected = data.map.creatorGameIdentityId || select.value;
+  select.replaceChildren();
+  if (!data.creatorCandidates?.length) select.append(new Option('等待客户端上报', ''));
+  for (const candidate of data.creatorCandidates || []) {
+    select.append(new Option(`${candidate.gameName} · ${candidate.gameId}`, candidate.id));
+  }
+  if ([...select.options].some((option) => option.value === selected)) select.value = selected;
+  document.querySelector('#creator-waiting').hidden = ready;
+  document.querySelector('#galaxy-auto').textContent = data.client?.galaxy?.name || '等待客户端上报';
+  document.querySelector('#organization-auto').textContent = data.client?.organization?.name || '等待客户端上报';
+  const nameInput = document.querySelector('#map-name');
+  if (data.map.name) nameInput.value = data.map.name;
+  else if (data.suggestedName && !nameInput.value) nameInput.value = data.suggestedName;
+  for (const field of infoForm.querySelectorAll('input, select')) field.disabled = !ready;
   syncNext();
   if (data.map.status === 'active' && state.step !== 4) setStep(4);
   return data;
@@ -79,57 +100,61 @@ function updateWizard(data) {
 
 async function pollWizard() {
   stopPolling();
-  if (state.step !== 3 || !state.mapId) return;
+  if (state.step !== 2 || !state.mapId) return;
   try {
     const data = await api(`/maps/${encodeURIComponent(state.mapId)}/wizard`);
     updateWizard(data);
   } catch (error) {
     showError(error);
   } finally {
-    if (state.step === 3) state.pollTimer = window.setTimeout(pollWizard, 4000);
+    if (state.step === 2) state.pollTimer = window.setTimeout(pollWizard, 4000);
   }
 }
 
-async function createMap() {
+async function prepareDeployment() {
+  const data = await api('/maps', { method: 'POST', body: {} });
+  state.mapId = data.map.id;
+  state.map = data.map;
+  window.history.replaceState({}, '', runtime.page('create.html', { id: state.mapId }));
+  await issueToken();
+}
+
+async function completeInfo() {
   if (!infoForm.reportValidity()) return false;
   const joinPassword = document.querySelector('#new-join-password').value;
-  const data = await api('/maps', {
+  const data = await api(`/maps/${encodeURIComponent(state.mapId)}/wizard`, {
     method: 'POST',
     body: {
       name: document.querySelector('#map-name').value.trim(),
-      creatorGameName: document.querySelector('#creator-game-name').value.trim(),
+      creatorGameIdentityId: document.querySelector('#creator-game-identity').value,
       reviewRequired: document.querySelector('#review-required').checked,
       joinPassword
     }
   });
-  state.mapId = data.map.id;
   state.map = data.map;
+  state.canActivate = true;
   window.sessionStorage.setItem(passwordKey(state.mapId), joinPassword);
-  window.history.replaceState({}, '', runtime.page('create.html', { id: state.mapId }));
-  for (const input of infoForm.querySelectorAll('input')) input.disabled = true;
-  await issueToken();
   return true;
 }
 
 nextButton.addEventListener('click', async () => {
-  const original = nextButton.textContent;
   nextButton.disabled = true;
   nextButton.textContent = '正在处理……';
   try {
     if (state.step === 1) {
+      if (!state.mapId) await prepareDeployment();
       setStep(2);
     } else if (state.step === 2) {
-      if (!state.mapId && !(await createMap())) return;
       setStep(3);
     } else if (state.step === 3) {
+      if (!(await completeInfo())) return;
       await api(`/maps/${encodeURIComponent(state.mapId)}/activate`, { method: 'POST', body: {} });
       setStep(4);
     }
   } catch (error) {
     showError(error);
   } finally {
-    nextButton.textContent = state.step === 3 ? '激活并完成' : original;
-    if (state.step !== 3) nextButton.textContent = '继续';
+    nextButton.textContent = state.step === 3 ? '激活并完成' : '继续';
     syncNext();
   }
 });
@@ -174,13 +199,9 @@ async function initialize() {
     await loadPrep();
     state.mapId = new URL(window.location.href).searchParams.get('id');
     if (state.mapId) {
-      for (const input of infoForm.querySelectorAll('input')) input.disabled = true;
       const data = await api(`/maps/${encodeURIComponent(state.mapId)}/wizard`);
-      state.map = data.map;
-      document.querySelector('#map-name').value = data.map.name;
-      document.querySelector('#review-required').checked = data.map.reviewRequired;
       updateWizard(data);
-      setStep(data.map.status === 'active' ? 4 : 3);
+      setStep(data.map.status === 'active' ? 4 : data.map.wizardStep);
     } else {
       setStep(1);
     }

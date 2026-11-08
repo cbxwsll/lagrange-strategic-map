@@ -26,8 +26,8 @@
         <input id="join-game-name" name="gameName" autocomplete="off" required maxlength="80">
         <button type="button" id="find-identities">查询同名游戏 ID</button>
         <div id="identity-candidates" class="stack" aria-live="polite"></div>
-        <label for="join-game-id">游戏内 ID（重名时必须确认）</label>
-        <input id="join-game-id" name="gameId" autocomplete="off" required maxlength="80">
+        <input id="join-game-id" name="gameId" type="hidden">
+        <p id="join-request-status" class="status-line" role="status" hidden></p>
         <label for="join-password">加入密码</label>
         <input id="join-password" name="joinPassword" type="password" autocomplete="off" required maxlength="72">
         <div id="evidence-wrap" hidden>

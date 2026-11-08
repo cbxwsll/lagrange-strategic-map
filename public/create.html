@@ -16,8 +16,8 @@
     <h1>创建地图</h1>
     <ol class="steps" id="wizard-steps">
       <li data-step="1">1. 准备</li>
-      <li data-step="2">2. 地图信息</li>
-      <li data-step="3">3. 部署客户端</li>
+      <li data-step="2">2. 部署客户端</li>
+      <li data-step="3">3. 地图信息</li>
       <li data-step="4">4. 完成</li>
     </ol>
     <div id="message" class="message" role="status" hidden></div>
@@ -33,25 +33,7 @@
     </section>
 
     <section data-panel="2" hidden>
-      <h2>step2 地图信息</h2>
-      <form id="map-info-form">
-        <label for="map-name">地图名称</label>
-        <input id="map-name" name="name" required maxlength="80" autocomplete="off">
-        <label for="creator-game-name">创建者游戏名</label>
-        <input id="creator-game-name" name="creatorGameName" required maxlength="80" autocomplete="off">
-        <label class="checkbox" for="review-required">
-          <input id="review-required" name="reviewRequired" type="checkbox">
-          按游戏名加入需要审核（申请人须提交证据）
-        </label>
-        <label for="new-join-password">设置加入密码</label>
-        <input id="new-join-password" name="joinPassword" type="password" required minlength="8" maxlength="72" autocomplete="new-password">
-        <p class="muted small">至少 8 个字符，字母、数字、特殊符号任意两类，不含空白。</p>
-        <p class="muted">星系信息、联合体信息不用手填，由本地客户端自动获取上报。</p>
-      </form>
-    </section>
-
-    <section data-panel="3" hidden>
-      <h2>step3 部署客户端</h2>
+      <h2>step2 部署客户端</h2>
       <p><a id="client-download" class="button disabled-button" aria-disabled="true">客户端下载（链接待提供）</a></p>
       <ol>
         <li>运行客户端。</li>
@@ -70,6 +52,31 @@
       <p id="client-online" class="status-line">客户端状态：正在检查……</p>
       <p id="client-last-seen" class="status-line">最近同步：暂无</p>
       <p id="first-data">首批数据：尚未到达</p>
+    </section>
+
+    <section data-panel="3" hidden>
+      <h2>step3 地图信息</h2>
+      <form id="map-info-form">
+        <label for="creator-game-identity">创建者游戏名</label>
+        <select id="creator-game-identity" name="creatorGameIdentityId" required disabled>
+          <option value="">等待客户端上报</option>
+        </select>
+        <p id="creator-waiting" class="muted">等待客户端上报</p>
+        <label>星系</label>
+        <p id="galaxy-auto" class="status-line">等待客户端上报</p>
+        <label>联合体</label>
+        <p id="organization-auto" class="status-line">等待客户端上报</p>
+        <label for="map-name">地图名称</label>
+        <input id="map-name" name="name" required maxlength="80" autocomplete="off" disabled>
+        <label class="checkbox" for="review-required">
+          <input id="review-required" name="reviewRequired" type="checkbox" disabled>
+          按游戏名加入需要审核（申请人须提交证据）
+        </label>
+        <label for="new-join-password">设置加入密码</label>
+        <input id="new-join-password" name="joinPassword" type="password" required minlength="8" maxlength="72" autocomplete="new-password" disabled>
+        <p class="muted small">至少 8 个字符，字母、数字、特殊符号任意两类，不含空白。</p>
+        <p class="muted">创建者游戏名、星系和联合体由本地客户端自动上报，只能确认或从候选中选择。</p>
+      </form>
     </section>
 
     <section data-panel="4" hidden>
