@@ -152,8 +152,8 @@ export function createClientRouter() {
               fleet.vx ?? null, fleet.vy ?? null, fleet.vz ?? null, JSON.stringify(fleet.payload));
         }
         if (snapshot.sharing) {
-          database.prepare(`INSERT INTO sharing_snapshots (snapshot_id, current_value, target_value, effect, visits_equivalent)
-            VALUES (?, ?, ?, ?, ?)`)
+          database.prepare(`INSERT INTO sharing_snapshots
+            (snapshot_id, current_value, target_value, effect, visits_equivalent) VALUES (?, ?, ?, ?, ?)`)
             .run(snapshotId, snapshot.sharing.current, snapshot.sharing.target, snapshot.sharing.effect,
               snapshot.sharing.visitsEquivalent ?? null);
         }

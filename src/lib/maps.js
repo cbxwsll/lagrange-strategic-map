@@ -81,7 +81,7 @@ export function createVersion(db, mapId, context) {
 export function archiveVersion(db, map, version, reason) {
   if (!version) return;
   const timestamp = now();
-  db.prepare(`UPDATE map_versions SET status = 'historical', ended_at = COALESCE(ended_at, ?) WHERE id = ?`).run(timestamp, version.id);
+  db.prepare("UPDATE map_versions SET status = 'historical', ended_at = COALESCE(ended_at, ?) WHERE id = ?").run(timestamp, version.id);
   const counts = db.prepare(`SELECT
     (SELECT COUNT(*) FROM map_snapshots WHERE version_id = ?) AS snapshots,
     (SELECT COUNT(*) FROM map_roster WHERE version_id = ?) AS roster`).get(version.id, version.id);

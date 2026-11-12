@@ -104,7 +104,7 @@ export function createJoinRouter(config) {
     const database = req.app.locals.db;
     const map = getMap(database, req.params.mapId);
     reviewer(req, database, map);
-    const rows = req.app.locals.db.prepare(`SELECT join_requests.*, game_identities.game_id FROM join_requests
+    const rows = database.prepare(`SELECT join_requests.*, game_identities.game_id FROM join_requests
       JOIN game_identities ON game_identities.id = join_requests.game_identity_id
       WHERE join_requests.map_id = ? AND join_requests.status = 'pending'
       ORDER BY join_requests.created_at LIMIT 200`).all(map.id);
@@ -147,7 +147,7 @@ export function createJoinRouter(config) {
   });
 
   router.post('/:mapId/join-requests/:requestId/cancel', authenticated, (req, res) => {
-    const result = database.prepare(`UPDATE join_requests SET status = 'cancelled', resolved_at = ?
+    const result = req.app.locals.db.prepare(`UPDATE join_requests SET status = 'cancelled', resolved_at = ?
       WHERE id = ? AND map_id = ? AND user_id = ? AND status = 'pending'`)
       .run(now(), req.params.requestId, req.params.mapId, req.user.id);
     if (!result.changes) fail(404, 'JOIN_REQUEST_NOT_FOUND', '加入申请不存在或已处理');
