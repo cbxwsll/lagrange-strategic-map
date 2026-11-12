@@ -14,7 +14,8 @@ import { assertPasswordComplexity, hashPassword, now, randomToken, hashToken, uu
 
 const wizardInfoInput = z.object({
   name: z.string().trim().min(1).max(80),
-  creatorGameIdentityId: z.string().uuid(),
+  creatorGameName: z.string().trim().min(1).max(80),
+  creatorGameId: z.string().trim().min(1).max(80).optional(),
   reviewRequired: z.boolean().default(false),
   joinPassword: z.string().min(1).max(72)
 });
@@ -32,15 +33,30 @@ function contextView(context) {
   };
 }
 
-function creatorCandidates(database, context) {
+function creatorCandidates(database, context, gameName = null) {
   if (!context) return [];
-  const rows = database.prepare(`SELECT DISTINCT game_identities.id, game_identities.game_id, game_identities.game_name
-    FROM game_identities LEFT JOIN map_roster ON map_roster.game_identity_id = game_identities.id
-      AND map_roster.version_id = ?
-    WHERE game_identities.id = ? OR map_roster.game_identity_id IS NOT NULL
+  const rows = database.prepare(`SELECT game_identities.id, game_identities.game_id, game_identities.game_name,
+      map_roster.team_id, map_roster.is_leader, map_versions.organization_id, map_versions.organization_name
+    FROM map_roster
+    JOIN game_identities ON game_identities.id = map_roster.game_identity_id
+    JOIN map_versions ON map_versions.id = map_roster.version_id
+    WHERE map_roster.version_id = ? AND game_identities.is_observer = 0
+      AND (? IS NULL OR game_identities.game_name = ?)
     ORDER BY game_identities.game_name, game_identities.game_id`)
-    .all(context.version_id, context.game_identity_id);
-  return rows.map((row) => ({ id: row.id, gameId: row.game_id, gameName: row.game_name }));
+    .all(context.version_id, gameName, gameName);
+  return rows.map((row) => ({
+    id: row.id,
+    gameId: row.game_id,
+    gameName: row.game_name,
+    teamId: row.team_id,
+    isLeader: Boolean(row.is_leader),
+    organization: { id: row.organization_id, name: row.organization_name }
+  }));
+}
+
+function assertCreatorNotObserver(database, context, gameName) {
+  const observer = database.prepare('SELECT game_name FROM game_identities WHERE id = ?').get(context.game_identity_id);
+  if (observer?.game_name === gameName) fail(403, 'OBSERVER_NOT_USER', '观察员小号只作数据来源，创建者请填写大号游戏角色名');
 }
 
 export function createMapsRouter(config) {
@@ -121,7 +137,7 @@ export function createMapsRouter(config) {
     const snapshots = context ? database.prepare('SELECT COUNT(*) AS count FROM map_snapshots WHERE version_id = ?').get(context.version_id).count : 0;
     const client = contextView(context);
     const candidates = creatorCandidates(database, context);
-    const ready = Boolean(context && snapshots > 0 && client.online && candidates.length);
+    const ready = Boolean(context && snapshots > 0 && client.online);
     res.json({
       step: map.wizard_step,
       map: serializeMap(database, map, req.user.id),
@@ -130,7 +146,22 @@ export function createMapsRouter(config) {
       suggestedName: context ? `（${context.organization_name}）的地图` : null,
       firstDataReceived: snapshots > 0,
       canContinueToInfo: ready,
-      canActivate: Boolean(ready && map.name && map.creator_game_identity_id && map.join_password_hash)
+      canActivate: Boolean(ready && map.name && map.creator_game_name && map.join_password_hash)
+    });
+  });
+
+  router.get('/:mapId/creator-candidates', (req, res) => {
+    const input = z.object({ gameName: z.string().trim().min(1).max(80) }).parse(req.query);
+    const database = req.app.locals.db;
+    const map = getMap(database, req.params.mapId);
+    requireCreator(database, map, req.user.id);
+    const context = database.prepare('SELECT * FROM client_contexts WHERE map_id = ?').get(map.id);
+    if (!context) return res.json({ candidates: [], warning: '等待客户端上报' });
+    assertCreatorNotObserver(database, context, input.gameName);
+    const candidates = creatorCandidates(database, context, input.gameName);
+    res.json({
+      candidates,
+      warning: candidates.length ? null : '未在客户端已抓到的玩家数据中找到该角色，可继续创建，但暂时只记录角色名'
     });
   });
 
@@ -143,23 +174,35 @@ export function createMapsRouter(config) {
     if (map.status !== 'draft') fail(409, 'MAP_NOT_DRAFT', '地图不处于创建向导状态');
     const context = database.prepare('SELECT * FROM client_contexts WHERE map_id = ?').get(map.id);
     const snapshots = context ? database.prepare('SELECT COUNT(*) AS count FROM map_snapshots WHERE version_id = ?').get(context.version_id).count : 0;
-    const candidates = creatorCandidates(database, context);
     if (!context || !snapshots || !contextView(context).online) {
       fail(409, 'CLIENT_CONTEXT_REQUIRED', '客户端上线、登录并选择势力后才能填写地图信息');
     }
-    const identity = candidates.find((candidate) => candidate.id === input.creatorGameIdentityId);
-    if (!identity) fail(400, 'CREATOR_IDENTITY_INVALID', '创建者游戏身份必须从客户端上报的候选中选择');
+    assertCreatorNotObserver(database, context, input.creatorGameName);
+    const candidates = creatorCandidates(database, context, input.creatorGameName);
+    if (candidates.length > 1 && !input.creatorGameId) {
+      fail(409, 'CREATOR_IDENTITY_DISAMBIGUATION_REQUIRED', '存在重名，必须从候选列表选择大号角色 ID', { candidates });
+    }
+    const identity = input.creatorGameId
+      ? candidates.find((candidate) => candidate.gameId === input.creatorGameId)
+      : candidates.length === 1 ? candidates[0] : null;
+    if (input.creatorGameId && !identity) fail(400, 'CREATOR_IDENTITY_INVALID', '大号角色 ID 必须来自该角色名的候选列表');
     const joinPasswordHash = await hashPassword(input.joinPassword, config.bcryptRounds);
     database.transaction(() => {
       database.prepare(`UPDATE maps SET name = ?, creator_game_name = ?, creator_game_identity_id = ?,
         join_password_hash = ?, review_required = ?, wizard_step = 3, updated_at = ? WHERE id = ?`)
-        .run(input.name, identity.gameName, identity.id, joinPasswordHash, input.reviewRequired ? 1 : 0, now(), map.id);
+        .run(input.name, input.creatorGameName, identity?.id || null, joinPasswordHash, input.reviewRequired ? 1 : 0, now(), map.id);
       const membership = database.prepare('SELECT * FROM map_memberships WHERE map_id = ? AND user_id = ?').get(map.id, req.user.id);
       database.prepare('UPDATE map_memberships SET game_identity_id = ?, updated_at = ? WHERE id = ?')
-        .run(identity.id, now(), membership.id);
-      audit(database, map.id, req.user.id, 'map.wizard_completed', map.id, { creatorGameIdentityId: identity.id });
+        .run(identity?.id || null, now(), membership.id);
+      audit(database, map.id, req.user.id, 'map.wizard_completed', map.id, {
+        creatorGameName: input.creatorGameName, creatorGameIdentityId: identity?.id || null
+      });
     })();
-    res.json({ map: serializeMap(database, getMap(database, map.id), req.user.id) });
+    res.json({
+      map: serializeMap(database, getMap(database, map.id), req.user.id),
+      creatorIdentityMatched: Boolean(identity),
+      creatorWarning: identity ? null : '未匹配到大号角色 ID，已只保存角色名并允许继续'
+    });
   }));
 
   router.post('/:mapId/client-tokens', (req, res) => {
@@ -196,8 +239,8 @@ export function createMapsRouter(config) {
     const context = database.prepare('SELECT * FROM client_contexts WHERE map_id = ?').get(map.id);
     const snapshots = context ? database.prepare('SELECT COUNT(*) AS count FROM map_snapshots WHERE version_id = ?').get(context.version_id).count : 0;
     if (!context || !snapshots) fail(409, 'FIRST_DATA_REQUIRED', '首批客户端数据到达后才能激活地图');
-    if (!map.name || !map.creator_game_identity_id || !map.join_password_hash) {
-      fail(409, 'MAP_INFO_REQUIRED', '确认自动上报信息并设置加入密码后才能激活地图');
+    if (!map.name || !map.creator_game_name || !map.join_password_hash) {
+      fail(409, 'MAP_INFO_REQUIRED', '填写大号角色名、地图信息并设置加入密码后才能激活地图');
     }
     database.prepare("UPDATE maps SET current_version_id = ?, status = 'active', wizard_step = 4, activated_at = ?, updated_at = ? WHERE id = ?")
       .run(context.version_id, now(), now(), map.id);
@@ -221,9 +264,7 @@ export function createMapsRouter(config) {
     requireCreator(database, map, req.user.id);
     if (map.status !== 'suspended') fail(409, 'MAP_NOT_SUSPENDED', '地图当前不是数据号离盟下线状态');
     const context = database.prepare('SELECT * FROM client_contexts WHERE map_id = ?').get(map.id);
-    const present = context && database.prepare(`SELECT 1 FROM map_roster JOIN game_identities ON game_identities.id = map_roster.game_identity_id
-      WHERE map_roster.version_id = ? AND game_identities.game_id = ?`).get(context.version_id, map.data_account_game_id);
-    if (!present) fail(409, 'DATA_ACCOUNT_NOT_IN_ROSTER', '数据号尚未回到联合体 roster');
+    if (!context?.observer_in_roster) fail(409, 'DATA_ACCOUNT_NOT_IN_ROSTER', '数据号尚未回到联合体 roster');
     database.prepare("UPDATE maps SET status = 'active', updated_at = ? WHERE id = ?").run(now(), map.id);
     audit(database, map.id, req.user.id, 'map.access_resumed', map.id);
     res.json({ map: serializeMap(database, getMap(database, map.id), req.user.id) });
