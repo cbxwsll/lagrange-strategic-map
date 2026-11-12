@@ -25,7 +25,7 @@ test('WebSocket 骨架：Cookie 认证、订阅与退订', async (t) => {
     roster: [{ gameId: 'data-account-1', gameName: '数据小号' }, { gameId: 'guest-ws', gameName: '访客WS' }]
   })).expect(202);
   const wizard = await request.get(`/api/v1/maps/${mapId}/wizard`).set(auth(user)).expect(200);
-  await request.post(`/api/v1/maps/${mapId}/wizard`).set(auth(creator)).send({
+  await request.post(`/api/v1/maps/${mapId}/wizard`).set(auth(user)).send({
     name: 'WS图', creatorGameName: 'WS大号',
     reviewRequired: false, joinPassword: 'joinpass1!'
   }).expect(200);
