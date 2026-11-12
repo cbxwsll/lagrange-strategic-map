@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { audit } from '../lib/auth.js';
 import { fail } from '../lib/errors.js';
-import { upsertGameIdentity } from '../lib/identities.js';
+import { markGameIdentityObserver, upsertGameIdentity } from '../lib/identities.js';
 import { archiveVersion, createVersion, getVersion } from '../lib/maps.js';
 import { replaceRoster } from '../lib/roster.js';
 import { hashToken, now, uuid } from '../lib/security.js';
@@ -79,6 +79,7 @@ export function createClientRouter() {
     database.transaction(() => {
       const timestamp = now();
       const identity = upsertGameIdentity(database, input.dataAccount);
+      markGameIdentityObserver(database, identity.id);
       if (map.data_account_game_id && map.data_account_game_id !== input.dataAccount.gameId) {
         fail(409, 'DATA_ACCOUNT_MISMATCH', '地图已绑定其他数据号');
       }
@@ -151,8 +152,8 @@ export function createClientRouter() {
               fleet.vx ?? null, fleet.vy ?? null, fleet.vz ?? null, JSON.stringify(fleet.payload));
         }
         if (snapshot.sharing) {
-          database.prepare(`INSERT INTO sharing_snapshots
-            (snapshot_id, current_value, target_value, effect, visits_equivalent) VALUES (?, ?, ?, ?, ?)`)
+          database.prepare(`INSERT INTO sharing_snapshots (snapshot_id, current_value, target_value, effect, visits_equivalent)
+            VALUES (?, ?, ?, ?, ?)`)
             .run(snapshotId, snapshot.sharing.current, snapshot.sharing.target, snapshot.sharing.effect,
               snapshot.sharing.visitsEquivalent ?? null);
         }

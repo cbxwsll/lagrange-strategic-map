@@ -35,7 +35,7 @@ export function createJoinRouter(config) {
   router.get('/:mapId/game-identities', (req, res) => {
     const input = z.object({ gameName: z.string().trim().min(1).max(80) }).parse(req.query);
     getMap(req.app.locals.db, req.params.mapId);
-    const rows = req.app.locals.db.prepare('SELECT game_id, game_name FROM game_identities WHERE game_name = ? ORDER BY game_id LIMIT 50').all(input.gameName);
+    const rows = req.app.locals.db.prepare('SELECT game_id, game_name FROM game_identities WHERE game_name = ? AND is_observer = 0 ORDER BY game_id LIMIT 50').all(input.gameName);
     res.json({ candidates: rows.map((row) => ({ gameId: row.game_id, gameName: row.game_name })) });
   });
 
@@ -52,7 +52,12 @@ export function createJoinRouter(config) {
     if (!(await verifyPassword(input.joinPassword, map.join_password_hash))) fail(401, 'JOIN_PASSWORD_INVALID', '加入密码错误');
     if (map.review_required && !input.evidence) fail(400, 'EVIDENCE_REQUIRED', '该地图要求加入申请附证据');
 
-    const candidates = database.prepare('SELECT * FROM game_identities WHERE game_name = ? ORDER BY game_id LIMIT 50').all(input.gameName);
+    const matches = database.prepare('SELECT * FROM game_identities WHERE game_name = ? ORDER BY game_id LIMIT 50').all(input.gameName);
+    if (input.gameId && matches.some((candidate) => candidate.game_id === input.gameId && candidate.is_observer)) {
+      fail(403, 'OBSERVER_NOT_USER', '观察员小号只作数据来源，不能注册或加入地图');
+    }
+    const candidates = matches.filter((candidate) => !candidate.is_observer);
+    if (!candidates.length && matches.length) fail(403, 'OBSERVER_NOT_USER', '观察员小号只作数据来源，不能注册或加入地图');
     if (!candidates.length) fail(404, 'GAME_IDENTITY_NOT_FOUND', '没有客户端上报的同名游戏身份，请确认游戏名或等待客户端同步');
     if (candidates.length > 1 && !input.gameId) fail(409, 'IDENTITY_DISAMBIGUATION_REQUIRED', '存在重名，必须从候选列表选择游戏内 ID');
     const identity = input.gameId
@@ -99,7 +104,7 @@ export function createJoinRouter(config) {
     const database = req.app.locals.db;
     const map = getMap(database, req.params.mapId);
     reviewer(req, database, map);
-    const rows = database.prepare(`SELECT join_requests.*, game_identities.game_id FROM join_requests
+    const rows = req.app.locals.db.prepare(`SELECT join_requests.*, game_identities.game_id FROM join_requests
       JOIN game_identities ON game_identities.id = join_requests.game_identity_id
       WHERE join_requests.map_id = ? AND join_requests.status = 'pending'
       ORDER BY join_requests.created_at LIMIT 200`).all(map.id);
@@ -142,7 +147,7 @@ export function createJoinRouter(config) {
   });
 
   router.post('/:mapId/join-requests/:requestId/cancel', authenticated, (req, res) => {
-    const result = req.app.locals.db.prepare(`UPDATE join_requests SET status = 'cancelled', resolved_at = ?
+    const result = database.prepare(`UPDATE join_requests SET status = 'cancelled', resolved_at = ?
       WHERE id = ? AND map_id = ? AND user_id = ? AND status = 'pending'`)
       .run(now(), req.params.requestId, req.params.mapId, req.user.id);
     if (!result.changes) fail(404, 'JOIN_REQUEST_NOT_FOUND', '加入申请不存在或已处理');
