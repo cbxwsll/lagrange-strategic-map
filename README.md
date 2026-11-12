@@ -10,7 +10,8 @@
 - 可运行时切换的全站内测门槛：页面、API 与 WebSocket 统一校验 7 天签名 cookie；停用码立即失效，注册不再单独要求邀请码。
 - 网站账号会话、成员通行会话、验证码状态、限流计数、地图、权限、申请和快照全部落 SQLite，不把地图数据驻留内存。
 - 游戏内 ID 作为唯一身份基准，游戏名仅用于显示与重名候选查询；加入地图不绑定网站账号。
-- 创建向导按准备→部署客户端→地图信息→完成执行，创建者身份、星系和联合体只接受客户端上报值。
+- 创建向导按准备→部署客户端→地图信息→完成执行；创建者大号角色名由用户手填，星系和联合体只接受客户端上报值。唯一同名自动绑定角色 ID，重名必须消歧，无匹配会警告但允许只保存角色名继续。
+- 客户端 `dataAccount` 持久标记为 observer，只作数据来源，不进入名册、成员、创建者或权限候选，也不能加入地图或持有成员会话。
 - 创建者、T 权限、盟主、小队队长、管理员子集权限；T/管理员权限转移与盟主任免队长。
 - 无账号访客凭游戏名和加入密码申请，重名时必须选择候选游戏内 ID；当前 T 权限持有者与盟主双签，任一方同意即加入。
 - 审批通过后，申请人凭独立回执领取绑定地图+游戏身份的 7 天 HttpOnly 成员通行 cookie，可访问对应地图 API 和 WebSocket。
@@ -20,7 +21,7 @@
 - WebSocket Cookie 认证、地图订阅/退订和心跳骨架；业务推送事件尚未启用。
 - 原生静态页面：地图列表与加入、邮箱注册/登录/找回、四步创建向导、账号设置。
 - 地图页：建筑名搜索、特征筛选、共享度提示、舰队三态、创建者管理入口、档案馆和 WS 状态。
-- 最新快照只读接口 `GET /maps/:id/display`，从 SQLite 读取真实建筑、舰队和共享度数据。
+- 最新快照只读接口 `GET /maps/:id/display`，从 SQLite 读取真实建筑、舰队和共享度数据，并按当前成员身份返回关系与颜色：自己白色、同小队青色、同联合体蓝色；色值集中在 `src/lib/viewer-colors.js`。
 - §11 权限状态机 8 项单测，以及密码边界、端到端集成、静态页面和运行时地址测试。
 
 ## 明确不在本波范围
@@ -41,6 +42,7 @@ src/
     migrations/002_invites.sql
     migrations/003_beta_gate.sql
     migrations/004_guest_members_and_auto_wizard.sql
+    migrations/005_observer_and_viewer_colors.sql
   invite.js                 内测通行码命令行管理入口
   lib/                     认证、权限、地图、roster、安全等领域逻辑
   routes/                  auth / maps / display / join / permissions / client
@@ -115,10 +117,11 @@ npm run invite -- add '在此填入通行码' --name '绑定名'
 | `GET /maps/wizard-prep` | step1 准备文案 |
 | `POST /maps` | step2 创建空草稿；返回 mapId |
 | `GET /maps` | 地图列表，自己的地图置顶 |
-| `GET /maps/:id/wizard` | 客户端在线、首批数据、自动身份候选与默认地图名 |
+| `GET /maps/:id/wizard` | 客户端在线、首批数据、非 observer 玩家候选与默认地图名 |
 | `POST /maps/:id/client-tokens` | step2 签发客户端令牌，仅显示一次 |
 | `DELETE /maps/:id/client-tokens/:tokenId` | 撤销客户端令牌 |
-| `POST /maps/:id/wizard` | step3 确认自动身份并设置地图名、审核开关和加入密码 |
+| `GET /maps/:id/creator-candidates?gameName=` | 按手填大号名检索当前 roster 候选，返回角色 ID、联合体、小队等区分信息 |
+| `POST /maps/:id/wizard` | step3 保存大号角色名及可确定的角色 ID，并设置地图名、审核开关和加入密码 |
 | `POST /maps/:id/activate` | step4 首批数据与地图信息齐全后激活 |
 | `GET /maps/:id/display` | 最新快照；支持 search、featureKey、featureValue 查询 |
 | `POST /maps/:id/join-requests` | 无需网站账号；游戏名+加入密码申请，重名时附候选游戏内 ID |
@@ -182,7 +185,8 @@ npm run invite -- add '在此填入通行码' --name '绑定名'
 }
 ```
 
-- `roster` 可省略；一旦提供，按该版本完整名单替换。
+- `roster` 可省略；一旦提供，按该版本完整名单替换。`dataAccount` 及其他 observer 不写入 `map_roster`，但原始 roster 中是否包含当前数据号会单独保存，用于离盟下线与回盟恢复判断。
+- 建筑关系着色从 `features.ownerGameId`、`features.ownerId` 或 `features.playerGameId` 读取所有人；舰队使用 `ownerGameId`。服务端按当前网站账号 membership 绑定的游戏身份或成员 cookie 计算 `relation` 和 `color`。
 - `serverStatus`：`online`、`maintenance`、`expedition_ended`。
 - 舰队 `state`：`real`、`estimated`、`invalid`，对应真实/推算/判错。
 - 新批次返回 202；相同 mapId+batchId 且内容完全一致返回 200 且 `duplicate=true`；同 ID 不同内容返回 409。
@@ -201,6 +205,6 @@ npm run invite -- add '在此填入通行码' --name '绑定名'
 npm test
 ```
 
-覆盖：§11 权限 8/8、密码边界 8/8、注册登录找回、内测门槛、旧库迁移、客户端自动向导、未上报置灰条件、错密码、重名强制消歧、无账号双签审批、成员 cookie 的地图/display/WebSocket 访问与跨图拒绝、换星系恢复、静态页面和真实快照筛选。测试数据库位于系统临时目录，每项测试后删除。另以 iPhone 仿真执行创建到免注册加入的完整浏览器流程。
+当前共 47 项测试，覆盖：§11 权限 8/8、密码边界 8/8、注册登录找回、内测门槛、004/005 旧库迁移、手填大号唯一匹配、重名强制消歧、无匹配警告但允许继续、observer 名册/成员/权限/会话隔离、同一快照双查看者关系着色、无账号双签审批、成员 cookie 的地图/display/WebSocket 访问与跨图拒绝、换星系恢复、静态页面和真实快照筛选。测试数据库位于系统临时目录，每项测试后删除。另以 iPhone 仿真执行创建到免注册加入的完整浏览器流程。
 
 部署见 [DEPLOYMENT.md](DEPLOYMENT.md)。

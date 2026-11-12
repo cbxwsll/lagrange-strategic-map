@@ -77,7 +77,7 @@ test('§9 地图只读接口返回真实快照并支持建筑名和特征筛选'
   })).expect(202);
   const wizard = await request.get(`/api/v1/maps/${mapId}/wizard`).set(auth(creator)).expect(200);
   await request.post(`/api/v1/maps/${mapId}/wizard`).set(auth(creator)).send({
-    name: '展示图', creatorGameIdentityId: wizard.body.creatorCandidates[0].id,
+    name: '展示图', creatorGameName: '展示大号',
     reviewRequired: false, joinPassword: 'joinpass1!'
   }).expect(200);
   await request.post(`/api/v1/maps/${mapId}/activate`).set(auth(creator)).send({}).expect(200);
