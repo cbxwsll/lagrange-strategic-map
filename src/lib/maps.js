@@ -17,9 +17,12 @@ export function currentVersion(db, map) {
 }
 
 export function getMember(db, mapId, userId = null, gameIdentityId = null) {
-  return db.prepare(`SELECT * FROM map_memberships WHERE map_id = ? AND status = 'active' AND (
-    (? IS NOT NULL AND user_id = ?) OR (? IS NOT NULL AND game_identity_id = ?)
-  ) ORDER BY is_creator DESC LIMIT 1`).get(mapId, userId, userId, gameIdentityId, gameIdentityId);
+  return db.prepare(`SELECT map_memberships.* FROM map_memberships
+    LEFT JOIN game_identities ON game_identities.id = map_memberships.game_identity_id
+    WHERE map_memberships.map_id = ? AND map_memberships.status = 'active' AND (
+      (? IS NOT NULL AND map_memberships.user_id = ?) OR
+      (? IS NOT NULL AND map_memberships.game_identity_id = ? AND game_identities.is_observer = 0)
+    ) ORDER BY map_memberships.is_creator DESC LIMIT 1`).get(mapId, userId, userId, gameIdentityId, gameIdentityId);
 }
 
 export function requireCreator(db, map, userId) {
@@ -39,6 +42,9 @@ export function serializeMap(db, map, userId = null, gameIdentityId = null) {
   const membership = getMember(db, map.id, userId, gameIdentityId);
   const defaultName = `（${organizationName}）的地图`;
   const displayName = map.name === defaultName ? map.name : `（${organizationName}）的（${map.name || '未命名'}）的地图`;
+  const creatorIdentity = map.creator_game_identity_id
+    ? db.prepare('SELECT game_id FROM game_identities WHERE id = ? AND is_observer = 0').get(map.creator_game_identity_id)
+    : null;
   return {
     id: map.id,
     name: map.name,
@@ -47,7 +53,9 @@ export function serializeMap(db, map, userId = null, gameIdentityId = null) {
     reviewRequired: Boolean(map.review_required),
     wizardStep: map.wizard_step,
     creatorUserId: map.creator_user_id,
-    creatorGameIdentityId: map.creator_game_identity_id || null,
+    creatorGameName: map.creator_game_name || null,
+    creatorGameId: creatorIdentity?.game_id || null,
+    creatorGameIdentityId: creatorIdentity ? map.creator_game_identity_id : null,
     organization: version ? { id: version.organization_id, name: version.organization_name } : null,
     galaxy: version ? { id: version.galaxy_id, name: version.galaxy_name } : null,
     joined: Boolean(membership),
@@ -73,7 +81,7 @@ export function createVersion(db, mapId, context) {
 export function archiveVersion(db, map, version, reason) {
   if (!version) return;
   const timestamp = now();
-  db.prepare("UPDATE map_versions SET status = 'historical', ended_at = COALESCE(ended_at, ?) WHERE id = ?").run(timestamp, version.id);
+  db.prepare(`UPDATE map_versions SET status = 'historical', ended_at = COALESCE(ended_at, ?) WHERE id = ?`).run(timestamp, version.id);
   const counts = db.prepare(`SELECT
     (SELECT COUNT(*) FROM map_snapshots WHERE version_id = ?) AS snapshots,
     (SELECT COUNT(*) FROM map_roster WHERE version_id = ?) AS roster`).get(version.id, version.id);

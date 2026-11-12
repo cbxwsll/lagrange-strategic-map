@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { mapViewAuthenticated, viewerForMap } from '../lib/member-auth.js';
 import { getMap, requireMapView } from '../lib/maps.js';
+import { bodyOwnerGameId, createViewerColorizer, VIEWER_COLOR_LEGEND } from '../lib/viewer-colors.js';
 
 const filterInput = z.object({
   search: z.string().trim().max(160).optional().default(''),
@@ -30,8 +31,9 @@ export function createDisplayRouter() {
     const database = req.app.locals.db;
     const map = getMap(database, req.params.mapId);
     const viewer = viewerForMap(req, map.id);
-    requireMapView(database, map, viewer.userId, viewer.gameIdentityId);
-    const empty = { mapId: map.id, empty: true, snapshot: null, bodies: [], fleets: [], sharing: null, features: [] };
+    const { member } = requireMapView(database, map, viewer.userId, viewer.gameIdentityId);
+    const colorize = createViewerColorizer(database, map, member);
+    const empty = { mapId: map.id, empty: true, snapshot: null, bodies: [], fleets: [], sharing: null, features: [], colorLegend: VIEWER_COLOR_LEGEND };
     if (!map.current_version_id) return res.json(empty);
     const snapshot = database.prepare(`SELECT * FROM map_snapshots
       WHERE map_id = ? AND version_id = ? ORDER BY observed_at DESC, rowid DESC LIMIT 1`)
@@ -58,15 +60,19 @@ export function createDisplayRouter() {
     }
     const bodies = database.prepare(`SELECT body_key, name, body_type, x, y, z, features_json
       FROM celestial_bodies WHERE ${conditions.join(' AND ')} ORDER BY name, body_key LIMIT 20000`)
-      .all(...parameters).map((row) => ({
-        key: row.body_key, name: row.name, type: row.body_type,
-        x: row.x, y: row.y, z: row.z, features: JSON.parse(row.features_json)
-      }));
+      .all(...parameters).map((row) => {
+        const features = JSON.parse(row.features_json);
+        const ownerGameId = bodyOwnerGameId(features);
+        return {
+          key: row.body_key, name: row.name, type: row.body_type,
+          x: row.x, y: row.y, z: row.z, features, ownerGameId, ...colorize(ownerGameId)
+        };
+      });
     const fleets = database.prepare(`SELECT * FROM fleet_snapshots WHERE snapshot_id = ? ORDER BY fleet_key LIMIT 20000`)
       .all(snapshot.id).map((row) => ({
         key: row.fleet_key, ownerGameId: row.owner_game_id, state: row.display_state,
         x: row.x, y: row.y, z: row.z, vx: row.vx, vy: row.vy, vz: row.vz,
-        payload: JSON.parse(row.payload_json)
+        payload: JSON.parse(row.payload_json), ...colorize(row.owner_game_id)
       }));
     const sharingRow = database.prepare('SELECT * FROM sharing_snapshots WHERE snapshot_id = ?').get(snapshot.id);
     const sharing = sharingRow ? {
@@ -81,6 +87,7 @@ export function createDisplayRouter() {
       fleets,
       sharing,
       features: featuresForSnapshot(database, snapshot.id),
+      colorLegend: VIEWER_COLOR_LEGEND,
       filters: input
     });
   });
