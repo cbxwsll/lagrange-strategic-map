@@ -44,6 +44,14 @@ function renderSharing(sharing) {
     : `${prefix}，大约等于拜访（${numberFormat.format(sharing.visitsEquivalent)}）个盟友`;
 }
 
+function renderColorLegend(legend = {}) {
+  for (const relation of ['self', 'team', 'organization']) {
+    const swatch = document.querySelector(`#color-${relation}`);
+    if (legend[relation]) swatch.style.backgroundColor = legend[relation];
+    if (relation === 'self') swatch.style.border = '1px solid #141210';
+  }
+}
+
 function renderBodies() {
   const results = document.querySelector('#body-results');
   results.replaceChildren();
@@ -114,7 +122,7 @@ function drawMap() {
   for (const body of bodies) {
     const point = project(body);
     context.globalAlpha = 1;
-    context.fillStyle = paper;
+    context.fillStyle = body.color || paper;
     context.strokeStyle = ink;
     context.lineWidth = state.focusBodyKey === body.key ? 4 : 1.5;
     context.fillRect(point.x - 6, point.y - 6, 12, 12);
@@ -125,22 +133,31 @@ function drawMap() {
   for (const fleet of fleets) {
     const point = project(fleet);
     context.strokeStyle = ink;
-    context.fillStyle = ink;
+    context.fillStyle = fleet.color || ink;
     context.lineWidth = 2;
     if (fleet.state === 'real') {
       context.globalAlpha = 1;
-      context.beginPath(); context.arc(point.x, point.y, 7, 0, Math.PI * 2); context.fill();
+      context.beginPath(); context.arc(point.x, point.y, 7, 0, Math.PI * 2); context.fill(); context.stroke();
     } else if (fleet.state === 'estimated') {
       context.globalAlpha = 0.4;
-      context.beginPath(); context.arc(point.x, point.y, 7, 0, Math.PI * 2); context.fill();
+      context.beginPath(); context.arc(point.x, point.y, 7, 0, Math.PI * 2); context.fill(); context.stroke();
       context.globalAlpha = 0.7;
+      context.fillStyle = ink;
       context.fillText('推算中', point.x + 10, point.y + 4);
     } else {
       context.globalAlpha = 1;
-      context.beginPath();
-      context.moveTo(point.x - 7, point.y - 7); context.lineTo(point.x + 7, point.y + 7);
-      context.moveTo(point.x + 7, point.y - 7); context.lineTo(point.x - 7, point.y + 7);
-      context.stroke();
+      const drawCross = () => {
+        context.beginPath();
+        context.moveTo(point.x - 7, point.y - 7); context.lineTo(point.x + 7, point.y + 7);
+        context.moveTo(point.x + 7, point.y - 7); context.lineTo(point.x - 7, point.y + 7);
+        context.stroke();
+      };
+      context.lineWidth = 4;
+      drawCross();
+      context.strokeStyle = fleet.color || ink;
+      context.lineWidth = 2;
+      drawCross();
+      context.fillStyle = ink;
       context.fillText('判错', point.x + 10, point.y + 4);
     }
   }
@@ -159,6 +176,7 @@ async function loadDisplay() {
     state.display = await api(`/maps/${encodeURIComponent(state.mapId)}/display${suffix}`);
     updateFeatureOptions();
     renderSharing(state.display.sharing);
+    renderColorLegend(state.display.colorLegend);
     renderBodies();
     document.querySelector('#observed-at').textContent = state.display.snapshot
       ? `观测时间：${formatTime(state.display.snapshot.observedAt)} · 建筑 ${state.display.bodies.length} · 舰队 ${state.display.fleets.length}`

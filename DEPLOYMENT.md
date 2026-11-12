@@ -60,7 +60,7 @@ pm2 restart lagrange-strategic-map --update-env
 curl --fail http://127.0.0.1:9200/healthz
 ```
 
-`npm test` 使用独立临时数据库，不接触生产 `data/`。本波 `004_guest_members_and_auto_wizard.sql` 会重建 maps、memberships 和 join_requests 以允许无账号游戏身份成员，并新增 member_sessions；执行前必须按上方命令备份 data，启动后会自动做外键一致性检查。Node 大版本升级后，如 better-sqlite3 报 ABI 错误，在项目目录执行 `npm rebuild` 再重启。
+`npm test` 使用独立临时数据库，不接触生产 `data/`。`004_guest_members_and_auto_wizard.sql` 会重建 maps、memberships 和 join_requests 以允许无账号游戏身份成员，并新增 member_sessions；`005_observer_and_viewer_colors.sql` 会持久标记旧客户端数据号为 observer，将其从名册、纯游戏身份成员和成员会话中移除，并清空把数据号记成创建者的字段。真实玩家记录保留。执行前必须按上方命令备份 data，启动后会自动做外键一致性检查。Node 大版本升级后，如 better-sqlite3 报 ABI 错误，在项目目录执行 `npm rebuild` 再重启。
 
 ## 4. Caddy 路径分发
 
