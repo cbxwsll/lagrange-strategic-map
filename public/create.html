@@ -57,10 +57,14 @@
     <section data-panel="3" hidden>
       <h2>step3 地图信息</h2>
       <form id="map-info-form">
-        <label for="creator-game-identity">创建者游戏名</label>
-        <select id="creator-game-identity" name="creatorGameIdentityId" required disabled>
-          <option value="">等待客户端上报</option>
-        </select>
+        <label for="creator-game-name">创建者大号游戏角色名</label>
+        <input id="creator-game-name" name="creatorGameName" required maxlength="80" autocomplete="off" disabled>
+        <input id="creator-game-id" type="hidden">
+        <div class="toolbar">
+          <button type="button" id="find-creator" disabled>检索已抓到的角色</button>
+        </div>
+        <div id="creator-candidates" class="search-results" aria-live="polite"></div>
+        <p id="creator-warning" class="message error" role="alert" hidden></p>
         <p id="creator-waiting" class="muted">等待客户端上报</p>
         <label>星系</label>
         <p id="galaxy-auto" class="status-line">等待客户端上报</p>
@@ -75,7 +79,7 @@
         <label for="new-join-password">设置加入密码</label>
         <input id="new-join-password" name="joinPassword" type="password" required minlength="8" maxlength="72" autocomplete="new-password" disabled>
         <p class="muted small">至少 8 个字符，字母、数字、特殊符号任意两类，不含空白。</p>
-        <p class="muted">创建者游戏名、星系和联合体由本地客户端自动上报，只能确认或从候选中选择。</p>
+        <p class="muted">创建者请填写自己的大号角色名；客户端观察小号不会作为创建者。星系和联合体仍由客户端自动上报，不可手改。</p>
       </form>
     </section>
 

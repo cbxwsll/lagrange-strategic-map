@@ -1,6 +1,6 @@
 import {
-  api, copyText, currentUser, formatTime, goToLogin, renderSession,
-  runtime, showError, showMessage
+  api, copyText, currentUser, element, formatTime, goToLogin, renderSession,
+  runtime, setBusy, showError, showMessage
 } from './common.js';
 
 const state = {
@@ -78,14 +78,8 @@ function updateWizard(data) {
   document.querySelector('#first-data').textContent = `首批数据：${data.firstDataReceived ? '已到达' : '尚未到达'}`;
 
   const ready = state.canContinue;
-  const select = document.querySelector('#creator-game-identity');
-  const selected = data.map.creatorGameIdentityId || select.value;
-  select.replaceChildren();
-  if (!data.creatorCandidates?.length) select.append(new Option('等待客户端上报', ''));
-  for (const candidate of data.creatorCandidates || []) {
-    select.append(new Option(`${candidate.gameName} · ${candidate.gameId}`, candidate.id));
-  }
-  if ([...select.options].some((option) => option.value === selected)) select.value = selected;
+  const creatorName = document.querySelector('#creator-game-name');
+  if (data.map.creatorGameName && !creatorName.value) creatorName.value = data.map.creatorGameName;
   document.querySelector('#creator-waiting').hidden = ready;
   document.querySelector('#galaxy-auto').textContent = data.client?.galaxy?.name || '等待客户端上报';
   document.querySelector('#organization-auto').textContent = data.client?.organization?.name || '等待客户端上报';
@@ -93,6 +87,7 @@ function updateWizard(data) {
   if (data.map.name) nameInput.value = data.map.name;
   else if (data.suggestedName && !nameInput.value) nameInput.value = data.suggestedName;
   for (const field of infoForm.querySelectorAll('input, select')) field.disabled = !ready;
+  document.querySelector('#find-creator').disabled = !ready;
   syncNext();
   if (data.map.status === 'active' && state.step !== 4) setStep(4);
   return data;
@@ -119,20 +114,80 @@ async function prepareDeployment() {
   await issueToken();
 }
 
+function candidateLabel(candidate) {
+  const organization = candidate.organization?.name || '联合体未知';
+  const team = candidate.teamId ? `小队 ${candidate.teamId}` : '无小队信息';
+  return `${candidate.gameName} · 角色 ID：${candidate.gameId}\n${organization} · ${team}${candidate.isLeader ? ' · 盟主' : ''}`;
+}
+
+function resetCreatorLookup() {
+  document.querySelector('#creator-game-id').value = '';
+  document.querySelector('#creator-candidates').replaceChildren();
+  document.querySelector('#creator-warning').hidden = true;
+}
+
+async function findCreatorCandidates(event) {
+  const gameName = document.querySelector('#creator-game-name').value.trim();
+  if (!gameName) {
+    showMessage('请先输入大号游戏角色名。', 'error');
+    return;
+  }
+  resetCreatorLookup();
+  const container = document.querySelector('#creator-candidates');
+  const button = event.currentTarget;
+  setBusy(button, true, '正在检索……');
+  try {
+    const data = await api(`/maps/${encodeURIComponent(state.mapId)}/creator-candidates?gameName=${encodeURIComponent(gameName)}`);
+    if (!data.candidates.length) {
+      const warning = document.querySelector('#creator-warning');
+      warning.textContent = `未匹配到“${gameName}”的角色 ID。大号可能尚未进入观察小号视野；可以继续创建，暂时只保存角色名。`;
+      warning.hidden = false;
+      return;
+    }
+    if (data.candidates.length === 1) {
+      document.querySelector('#creator-game-id').value = data.candidates[0].gameId;
+      container.append(element('p', { className: 'muted', text: `已确认唯一匹配：\n${candidateLabel(data.candidates[0])}` }));
+      return;
+    }
+    container.append(element('p', { className: 'muted', text: '存在重名，必须选择一个大号角色 ID：' }));
+    for (const candidate of data.candidates) {
+      container.append(element('button', {
+        type: 'button', text: candidateLabel(candidate),
+        onclick: (clickEvent) => {
+          document.querySelector('#creator-game-id').value = candidate.gameId;
+          for (const button of container.querySelectorAll('button')) button.removeAttribute('aria-pressed');
+          clickEvent.currentTarget.setAttribute('aria-pressed', 'true');
+        }
+      }));
+    }
+  } catch (error) {
+    showError(error);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
 async function completeInfo() {
   if (!infoForm.reportValidity()) return false;
+  const creatorGameId = document.querySelector('#creator-game-id').value;
+  if (document.querySelectorAll('#creator-candidates button').length > 1 && !creatorGameId) {
+    showMessage('存在重名，请先从候选列表选择大号角色 ID。', 'error');
+    return false;
+  }
   const joinPassword = document.querySelector('#new-join-password').value;
   const data = await api(`/maps/${encodeURIComponent(state.mapId)}/wizard`, {
     method: 'POST',
     body: {
       name: document.querySelector('#map-name').value.trim(),
-      creatorGameIdentityId: document.querySelector('#creator-game-identity').value,
+      creatorGameName: document.querySelector('#creator-game-name').value.trim(),
+      ...(creatorGameId ? { creatorGameId } : {}),
       reviewRequired: document.querySelector('#review-required').checked,
       joinPassword
     }
   });
   state.map = data.map;
   state.canActivate = true;
+  if (data.creatorWarning) showMessage(data.creatorWarning, 'error');
   window.sessionStorage.setItem(passwordKey(state.mapId), joinPassword);
   return true;
 }
@@ -167,6 +222,9 @@ infoForm.addEventListener('submit', (event) => {
   event.preventDefault();
   nextButton.click();
 });
+
+document.querySelector('#creator-game-name').addEventListener('input', resetCreatorLookup);
+document.querySelector('#find-creator').addEventListener('click', findCreatorCandidates);
 
 document.querySelector('#client-download').addEventListener('click', () => {
   showMessage('客户端下载链接将在客户端模块交付后填入，本波不上传虚假安装包。');
