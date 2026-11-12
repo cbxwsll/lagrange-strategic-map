@@ -70,10 +70,12 @@ export function adminPermissionsFor(db, memberId) {
 }
 
 export function loadActor(db, mapId, userId = null, gameIdentityId = null) {
-  const member = db.prepare(`SELECT * FROM map_memberships
-    WHERE map_id = ? AND status = 'active' AND (
-      (? IS NOT NULL AND user_id = ?) OR (? IS NOT NULL AND game_identity_id = ?)
-    ) ORDER BY is_creator DESC LIMIT 1`)
+  const member = db.prepare(`SELECT map_memberships.* FROM map_memberships
+    LEFT JOIN game_identities ON game_identities.id = map_memberships.game_identity_id
+    WHERE map_memberships.map_id = ? AND map_memberships.status = 'active' AND (
+      (? IS NOT NULL AND map_memberships.user_id = ?) OR
+      (? IS NOT NULL AND map_memberships.game_identity_id = ? AND game_identities.is_observer = 0)
+    ) ORDER BY map_memberships.is_creator DESC LIMIT 1`)
     .get(mapId, userId, userId, gameIdentityId, gameIdentityId);
   return actorFromMembership(member, member ? adminPermissionsFor(db, member.id) : []);
 }

@@ -20,7 +20,19 @@ export function upsertGameIdentity(db, { gameId, gameName, avatarUrl = null, use
   return db.prepare('SELECT * FROM game_identities WHERE id = ?').get(id);
 }
 
+export function markGameIdentityObserver(db, gameIdentityId) {
+  db.prepare('UPDATE game_identities SET is_observer = 1, updated_at = ? WHERE id = ?')
+    .run(now(), gameIdentityId);
+}
+
+export function assertNotObserver(db, gameIdentityId) {
+  if (!gameIdentityId) return;
+  const identity = db.prepare('SELECT is_observer FROM game_identities WHERE id = ?').get(gameIdentityId);
+  if (identity?.is_observer) fail(403, 'OBSERVER_NOT_USER', '观察员小号只作数据来源，不能作为用户身份');
+}
+
 export function ensureMembership(db, mapId, userId = null, gameIdentityId = null) {
+  assertNotObserver(db, gameIdentityId);
   const existing = userId
     ? db.prepare('SELECT * FROM map_memberships WHERE map_id = ? AND user_id = ?').get(mapId, userId)
     : gameIdentityId

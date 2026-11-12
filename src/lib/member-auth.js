@@ -1,9 +1,11 @@
 import { cookies } from './auth.js';
+import { assertNotObserver } from './identities.js';
 import { hashToken, now, randomToken, uuid } from './security.js';
 
 export const MEMBER_COOKIE = 'lagrange_member';
 
 export function issueMemberSession(db, config, mapId, gameIdentityId) {
+  assertNotObserver(db, gameIdentityId);
   const token = randomToken();
   const timestamp = now();
   const ttlDays = config.memberSessionTtlDays || 7;
@@ -29,7 +31,7 @@ export function memberSessionForToken(db, token) {
   if (!token) return null;
   return db.prepare(`SELECT member_sessions.*, game_identities.game_id, game_identities.game_name
     FROM member_sessions JOIN game_identities ON game_identities.id = member_sessions.game_identity_id
-    WHERE member_sessions.token_hash = ? AND member_sessions.expires_at > ?`)
+    WHERE member_sessions.token_hash = ? AND member_sessions.expires_at > ? AND game_identities.is_observer = 0`)
     .get(hashToken(token), now());
 }
 

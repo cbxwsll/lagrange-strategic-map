@@ -5,10 +5,13 @@ import { now } from './security.js';
 
 export function replaceRoster(db, map, version, roster) {
   const timestamp = now();
+  const dataAccountPresent = Boolean(map.data_account_game_id && roster.some((entry) => entry.gameId === map.data_account_game_id));
+  const players = roster.filter((entry) => entry.gameId !== map.data_account_game_id);
   db.prepare('DELETE FROM map_roster WHERE map_id = ? AND version_id = ?').run(map.id, version.id);
   db.prepare("UPDATE map_memberships SET is_leader = 0, updated_at = ? WHERE map_id = ?").run(timestamp, map.id);
-  for (const entry of roster) {
+  for (const entry of players) {
     const identity = upsertGameIdentity(db, { gameId: entry.gameId, gameName: entry.gameName });
+    if (identity.is_observer) continue;
     db.prepare(`INSERT INTO map_roster
       (map_id, version_id, game_identity_id, game_name, is_leader, team_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
       .run(map.id, version.id, identity.id, entry.gameName, entry.isLeader ? 1 : 0, entry.teamId || null, timestamp);
@@ -16,11 +19,10 @@ export function replaceRoster(db, map, version, roster) {
       WHERE map_id = ? AND game_identity_id = ?`)
       .run(entry.isLeader ? 1 : 0, entry.teamId || null, timestamp, map.id, identity.id);
   }
-  if (roster.length && map.data_account_game_id) {
-    const dataAccountPresent = roster.some((entry) => entry.gameId === map.data_account_game_id);
-    if (!dataAccountPresent && map.status !== 'draft' && map.status !== 'merged') {
-      db.prepare("UPDATE maps SET status = 'suspended', updated_at = ? WHERE id = ?").run(timestamp, map.id);
-    }
+  db.prepare('UPDATE client_contexts SET observer_in_roster = ? WHERE map_id = ?')
+    .run(dataAccountPresent ? 1 : 0, map.id);
+  if (roster.length && map.data_account_game_id && !dataAccountPresent && map.status !== 'draft' && map.status !== 'merged') {
+    db.prepare("UPDATE maps SET status = 'suspended', updated_at = ? WHERE id = ?").run(timestamp, map.id);
   }
 }
 
