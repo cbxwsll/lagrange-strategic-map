@@ -225,6 +225,9 @@ th { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; }
 .search-results button { width: 100%; justify-content: flex-start; margin-bottom: 8px; padding: 12px 16px; border-color: var(--hair); border-radius: 2px; background: var(--paper2); color: var(--ink); font-family: var(--serif); letter-spacing: .02em; text-align: left; white-space: pre-line; }
 .search-results button:hover { background: var(--ink); color: var(--paper); }
 .manager-section { border-top: 1px solid var(--ink); margin-top: 30px; padding-top: 8px; }
+.color-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 4px 20px; max-width: 680px; margin: 12px 0 18px; }
+.color-option { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 0; color: var(--ink); }
+.color-option input[type="color"] { width: 48px; min-width: 48px; min-height: 34px; padding: 2px; cursor: pointer; }
 .empty-state { border: 1px dashed var(--hair); background: rgba(250, 245, 228, .55); padding: 20px; margin: 18px 0; }
 
 .notice-overlay {
