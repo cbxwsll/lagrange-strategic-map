@@ -6,7 +6,6 @@ import { ensureMembership } from '../src/lib/identities.js';
 import { getMember, mapActor } from '../src/lib/maps.js';
 import { issueMemberSession, memberSessionForToken } from '../src/lib/member-auth.js';
 import { hashToken } from '../src/lib/security.js';
-import { VIEWER_COLORS } from '../src/lib/viewer-colors.js';
 
 async function activeMap(request, context, options = {}) {
   const creator = await registerUser(request, context, { email: options.email || 'creator@example.com' });
@@ -381,7 +380,7 @@ test('观察小号持久隔离：不进名册成员或权限候选，不能加�
 });
 
 
-test('查看者关系着色：同一快照在大号与另一成员视角下，自己、同队、同联合体颜色不同', async (t) => {
+test('查看者关系分类：同一快照双视角回归，敌对中立及其他玩家只返回 relation', async (t) => {
   const context = testContext();
   t.after(() => context.close());
   const request = supertest(context.app);
@@ -397,13 +396,21 @@ test('查看者关系着色：同一快照在大号与另一成员视角下，�
     ],
     snapshots: [{
       observedAt,
-      bodies: owners.map((ownerGameId) => ({
-        key: `body-${ownerGameId}`, name: `建筑-${ownerGameId}`, type: 'base', x: 1, y: 2,
-        features: { ownerGameId }
-      })),
-      fleets: owners.map((ownerGameId) => ({
-        key: `fleet-${ownerGameId}`, ownerGameId, state: 'real', x: 3, y: 4
-      }))
+      bodies: [
+        ...owners.map((ownerGameId) => ({
+          key: `body-${ownerGameId}`, name: `建筑-${ownerGameId}`, type: 'base', x: 1, y: 2,
+          features: { ownerGameId }
+        })),
+        { key: 'body-pirate', name: '海盗基地', type: 'pirate_base', x: 5, y: 6, features: {} },
+        { key: 'body-neutral', name: '无属性空间站', type: 'space_station', x: 7, y: 8, features: {} }
+      ],
+      fleets: [
+        ...owners.map((ownerGameId) => ({
+          key: `fleet-${ownerGameId}`, ownerGameId, state: 'real', x: 3, y: 4
+        })),
+        { key: 'fleet-outsider', ownerGameId: 'outsider', state: 'real', x: 5, y: 6 },
+        { key: 'fleet-unowned', state: 'real', x: 7, y: 8 }
+      ]
     }]
   }));
   await request.post(`/api/v1/maps/${mapId}/wizard`).set(auth(creator)).send({
@@ -422,31 +429,30 @@ test('查看者关系着色：同一快照在大号与另一成员视角下，�
   const displayA = await request.get(`/api/v1/maps/${mapId}/display`).set(auth(creator)).expect(200);
   const displayB = await request.get(`/api/v1/maps/${mapId}/display`).set('Cookie', viewerBCookie).expect(200);
   assert.equal(displayA.body.snapshot.id, displayB.body.snapshot.id);
-  assert.deepEqual(displayA.body.colorLegend, {
-    self: VIEWER_COLORS.self, team: VIEWER_COLORS.team, organization: VIEWER_COLORS.organization
-  });
-  const relationsA = Object.fromEntries(displayA.body.fleets.map((fleet) => [fleet.ownerGameId, fleet.relation]));
+  const ownedFleets = (display) => display.fleets.filter((fleet) => fleet.ownerGameId);
+  const relationsA = Object.fromEntries(ownedFleets(displayA.body).map((fleet) => [fleet.ownerGameId, fleet.relation]));
   assert.deepEqual(relationsA, {
-    'viewer-a': 'self', 'teammate-a': 'team', 'viewer-b': 'organization', unassigned: 'organization'
+    'viewer-a': 'self', 'teammate-a': 'team', 'viewer-b': 'organization', unassigned: 'organization', outsider: 'other'
   });
-  const relationsB = Object.fromEntries(displayB.body.fleets.map((fleet) => [fleet.ownerGameId, fleet.relation]));
+  const relationsB = Object.fromEntries(ownedFleets(displayB.body).map((fleet) => [fleet.ownerGameId, fleet.relation]));
   assert.deepEqual(relationsB, {
-    'viewer-a': 'organization', 'teammate-a': 'organization', 'viewer-b': 'self', unassigned: 'organization'
+    'viewer-a': 'organization', 'teammate-a': 'organization', 'viewer-b': 'self', unassigned: 'organization', outsider: 'other'
   });
   for (const display of [displayA.body, displayB.body]) {
+    assert.equal(Object.hasOwn(display, 'colorLegend'), false);
     for (const item of [...display.bodies, ...display.fleets]) {
-      assert.equal(item.color, VIEWER_COLORS[item.relation]);
+      assert.equal(Object.hasOwn(item, 'color'), false);
     }
+    assert.equal(display.bodies.find((body) => body.key === 'body-pirate').relation, 'hostile');
+    assert.equal(display.bodies.find((body) => body.key === 'body-neutral').relation, 'neutral');
+    assert.equal(display.fleets.find((fleet) => fleet.key === 'fleet-unowned').relation, 'other');
   }
   const bodyAFromA = displayA.body.bodies.find((body) => body.ownerGameId === 'viewer-a');
   const bodyAFromB = displayB.body.bodies.find((body) => body.ownerGameId === 'viewer-a');
   assert.equal(bodyAFromA.relation, 'self');
-  assert.equal(bodyAFromA.color, VIEWER_COLORS.self);
   assert.equal(bodyAFromB.relation, 'organization');
-  assert.equal(bodyAFromB.color, VIEWER_COLORS.organization);
-  assert.notEqual(bodyAFromA.color, bodyAFromB.color);
   const teammateFromA = displayA.body.fleets.find((fleet) => fleet.ownerGameId === 'teammate-a');
   const teammateFromB = displayB.body.fleets.find((fleet) => fleet.ownerGameId === 'teammate-a');
-  assert.equal(teammateFromA.color, VIEWER_COLORS.team);
-  assert.equal(teammateFromB.color, VIEWER_COLORS.organization);
+  assert.equal(teammateFromA.relation, 'team');
+  assert.equal(teammateFromB.relation, 'organization');
 });
