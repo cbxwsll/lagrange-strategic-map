@@ -2,8 +2,14 @@ import {
   MAP_STATUS, api, connectMapSocket, currentUser, element, formatTime,
   renderSession, requiredMapId, showError, showMessage
 } from './common.js';
+import {
+  RELATION_KEYS, darkenColor, loadColors, resetColors, saveColors
+} from './relation-colors.js';
 
-const state = { user: null, mapId: null, map: null, display: null, focusBodyKey: null, socket: null, creatorTimer: null };
+const state = {
+  user: null, mapId: null, map: null, display: null, focusBodyKey: null, socket: null, creatorTimer: null,
+  colors: loadColors(window.localStorage)
+};
 const canvas = document.querySelector('#map-canvas');
 const featureKey = document.querySelector('#feature-key');
 const featureValue = document.querySelector('#feature-value');
@@ -44,11 +50,18 @@ function renderSharing(sharing) {
     : `${prefix}，大约等于拜访（${numberFormat.format(sharing.visitsEquivalent)}）个盟友`;
 }
 
-function renderColorLegend(legend = {}) {
-  for (const relation of ['self', 'team', 'organization']) {
+function renderColorLegend() {
+  for (const relation of RELATION_KEYS) {
+    const color = state.colors[relation];
     const swatch = document.querySelector(`#color-${relation}`);
-    if (legend[relation]) swatch.style.backgroundColor = legend[relation];
-    if (relation === 'self') swatch.style.border = '1px solid #141210';
+    swatch.style.backgroundColor = color;
+    swatch.style.border = `1px solid ${darkenColor(color)}`;
+  }
+}
+
+function syncColorInputs() {
+  for (const relation of RELATION_KEYS) {
+    document.querySelector(`#color-input-${relation}`).value = state.colors[relation];
   }
 }
 
@@ -122,8 +135,9 @@ function drawMap() {
   for (const body of bodies) {
     const point = project(body);
     context.globalAlpha = 1;
-    context.fillStyle = body.color || paper;
-    context.strokeStyle = ink;
+    const bodyColor = state.colors[body.relation] || state.colors.neutral;
+    context.fillStyle = bodyColor;
+    context.strokeStyle = darkenColor(bodyColor);
     context.lineWidth = state.focusBodyKey === body.key ? 4 : 1.5;
     context.fillRect(point.x - 6, point.y - 6, 12, 12);
     context.strokeRect(point.x - 6, point.y - 6, 12, 12);
@@ -132,8 +146,10 @@ function drawMap() {
   }
   for (const fleet of fleets) {
     const point = project(fleet);
-    context.strokeStyle = ink;
-    context.fillStyle = fleet.color || ink;
+    const fleetColor = state.colors[fleet.relation] || state.colors.other;
+    const fleetBorder = darkenColor(fleetColor);
+    context.strokeStyle = fleetBorder;
+    context.fillStyle = fleetColor;
     context.lineWidth = 2;
     if (fleet.state === 'real') {
       context.globalAlpha = 1;
@@ -154,7 +170,7 @@ function drawMap() {
       };
       context.lineWidth = 4;
       drawCross();
-      context.strokeStyle = fleet.color || ink;
+      context.strokeStyle = fleetColor;
       context.lineWidth = 2;
       drawCross();
       context.fillStyle = ink;
@@ -176,7 +192,7 @@ async function loadDisplay() {
     state.display = await api(`/maps/${encodeURIComponent(state.mapId)}/display${suffix}`);
     updateFeatureOptions();
     renderSharing(state.display.sharing);
-    renderColorLegend(state.display.colorLegend);
+    renderColorLegend();
     renderBodies();
     document.querySelector('#observed-at').textContent = state.display.snapshot
       ? `观测时间：${formatTime(state.display.snapshot.observedAt)} · 建筑 ${state.display.bodies.length} · 舰队 ${state.display.fleets.length}`
@@ -308,6 +324,24 @@ document.querySelector('#refresh-display').addEventListener('click', () => {
   loadDisplay();
   if (state.map?.isCreator) loadCreatorStatus();
 });
+document.querySelector('#color-toggle').addEventListener('click', () => {
+  const section = document.querySelector('#color-section');
+  section.hidden = !section.hidden;
+  document.querySelector('#color-toggle').setAttribute('aria-expanded', String(!section.hidden));
+});
+for (const relation of RELATION_KEYS) {
+  document.querySelector(`#color-input-${relation}`).addEventListener('input', (event) => {
+    state.colors = saveColors({ ...state.colors, [relation]: event.target.value }, window.localStorage);
+    renderColorLegend();
+    drawMap();
+  });
+}
+document.querySelector('#color-reset').addEventListener('click', () => {
+  state.colors = resetColors(window.localStorage);
+  syncColorInputs();
+  renderColorLegend();
+  drawMap();
+});
 window.addEventListener('resize', drawMap);
 
 document.querySelector('#archives-toggle').addEventListener('click', () => {
@@ -364,6 +398,8 @@ window.addEventListener('pagehide', () => {
 });
 
 async function initialize() {
+  syncColorInputs();
+  renderColorLegend();
   try {
     state.user = await currentUser();
     renderSession(state.user);
