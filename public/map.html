@@ -40,6 +40,9 @@
           <span><i class="legend-symbol" id="color-self"></i>自己</span>
           <span><i class="legend-symbol" id="color-team"></i>同小队</span>
           <span><i class="legend-symbol" id="color-organization"></i>同联合体</span>
+          <span><i class="legend-symbol" id="color-hostile"></i>敌对目标</span>
+          <span><i class="legend-symbol" id="color-neutral"></i>中立</span>
+          <span><i class="legend-symbol" id="color-other"></i>其他玩家</span>
         </div>
         <div class="legend" aria-label="舰队三态图例">
           <span><i class="legend-symbol"></i>真实（实心）</span>
@@ -57,8 +60,23 @@
 
     <div class="toolbar">
       <button type="button" id="refresh-display">刷新数据</button>
+      <button type="button" id="color-toggle" aria-controls="color-section" aria-expanded="false">配色</button>
       <button type="button" id="archives-toggle">档案馆</button>
     </div>
+
+    <section id="color-section" class="manager-section" hidden>
+      <h2>配色</h2>
+      <p class="muted small">配色仅保存在当前浏览器，修改后立即生效。</p>
+      <div class="color-options">
+        <label class="color-option" for="color-input-self"><input id="color-input-self" type="color">自己</label>
+        <label class="color-option" for="color-input-team"><input id="color-input-team" type="color">同小队</label>
+        <label class="color-option" for="color-input-organization"><input id="color-input-organization" type="color">同联合体</label>
+        <label class="color-option" for="color-input-hostile"><input id="color-input-hostile" type="color">敌对目标</label>
+        <label class="color-option" for="color-input-neutral"><input id="color-input-neutral" type="color">中立</label>
+        <label class="color-option" for="color-input-other"><input id="color-input-other" type="color">其他玩家</label>
+      </div>
+      <button type="button" id="color-reset">恢复默认</button>
+    </section>
 
     <section id="creator-panel" class="manager-section" hidden>
       <h2>创建者管理</h2>
