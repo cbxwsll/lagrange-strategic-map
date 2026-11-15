@@ -21,7 +21,7 @@
 - WebSocket Cookie 认证、地图订阅/退订和心跳骨架；业务推送事件尚未启用。
 - 原生静态页面：地图列表与加入、邮箱注册/登录/找回、四步创建向导、账号设置。
 - 地图页：建筑名搜索、特征筛选、共享度提示、舰队三态、创建者管理入口、档案馆和 WS 状态。
-- 最新快照只读接口 `GET /maps/:id/display`，从 SQLite 读取真实建筑、舰队和共享度数据，并按当前成员身份返回关系与颜色：自己白色、同小队青色、同联合体蓝色；色值集中在 `src/lib/viewer-colors.js`。
+- 最新快照只读接口 `GET /maps/:id/display`，从 SQLite 读取真实建筑、舰队和共享度数据，只按当前成员身份返回 `relation`：自己、同小队、同联合体、敌对、中立、其他玩家。六类默认色集中在 `public/assets/relation-colors.js` 的 `DEFAULT_COLORS`，地图页可用原生取色器即时调色并保存到 localStorage，也可恢复默认。
 - §11 权限状态机 8 项单测，以及密码边界、端到端集成、静态页面和运行时地址测试。
 
 ## 明确不在本波范围
@@ -186,7 +186,7 @@ npm run invite -- add '在此填入通行码' --name '绑定名'
 ```
 
 - `roster` 可省略；一旦提供，按该版本完整名单替换。`dataAccount` 及其他 observer 不写入 `map_roster`，但原始 roster 中是否包含当前数据号会单独保存，用于离盟下线与回盟恢复判断。
-- 建筑关系着色从 `features.ownerGameId`、`features.ownerId` 或 `features.playerGameId` 读取所有人；舰队使用 `ownerGameId`。服务端按当前网站账号 membership 绑定的游戏身份或成员 cookie 计算 `relation` 和 `color`。
+- 建筑关系从 `features.ownerGameId`、`features.ownerId` 或 `features.playerGameId` 读取所有人；舰队使用 `ownerGameId`。服务端按当前网站账号 membership 绑定的游戏身份或成员 cookie 计算 `relation`，六类判定统一收拢在 `src/lib/viewer-relations.js` 的 `classifyRelation`；敌对和中立读取实体类型及 features 标记，字段缺失时安全兜底。前端自行映射颜色，Canvas 描边由 `public/assets/relation-colors.js` 中的 `darkenColor` 按内芯色加深。
 - `serverStatus`：`online`、`maintenance`、`expedition_ended`。
 - 舰队 `state`：`real`、`estimated`、`invalid`，对应真实/推算/判错。
 - 新批次返回 202；相同 mapId+batchId 且内容完全一致返回 200 且 `duplicate=true`；同 ID 不同内容返回 409。
@@ -205,6 +205,6 @@ npm run invite -- add '在此填入通行码' --name '绑定名'
 npm test
 ```
 
-当前共 47 项测试，覆盖：§11 权限 8/8、密码边界 8/8、注册登录找回、内测门槛、004/005 旧库迁移、手填大号唯一匹配、重名强制消歧、无匹配警告但允许继续、observer 名册/成员/权限/会话隔离、同一快照双查看者关系着色、无账号双签审批、成员 cookie 的地图/display/WebSocket 访问与跨图拒绝、换星系恢复、静态页面和真实快照筛选。测试数据库位于系统临时目录，每项测试后删除。另以 iPhone 仿真执行创建到免注册加入的完整浏览器流程。
+当前共 49 项测试，覆盖：§11 权限 8/8、密码边界 8/8、注册登录找回、内测门槛、004/005 旧库迁移、手填大号唯一匹配、重名强制消歧、无匹配警告但允许继续、observer 名册/成员/权限/会话隔离、同一快照双查看者六类关系回归、display 不再下发颜色、调色持久化/恢复默认与浅色描边加深、无账号双签审批、成员 cookie 的地图/display/WebSocket 访问与跨图拒绝、换星系恢复、静态页面和真实快照筛选。测试数据库位于系统临时目录，每项测试后删除。另以 iPhone 仿真执行创建到免注册加入的完整浏览器流程。
 
 部署见 [DEPLOYMENT.md](DEPLOYMENT.md)。
